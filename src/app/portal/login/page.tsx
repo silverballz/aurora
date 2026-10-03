@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Lock, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Lock, Mail, ShieldCheck, UserCheck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -78,6 +78,41 @@ export default function ParticipantLoginPage() {
     }
   };
 
+  // 1-Click Fast Login as Approved Participant
+  const handleQuickDemoParticipant = async () => {
+    try {
+      setLoading(true);
+      const sendRes = await fetch("/api/auth/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "arjun.mehta@example.com" }),
+      });
+      const sendData = await sendRes.json();
+      const code = sendData.devHint || "123456";
+
+      const authRes = await fetch("/api/auth/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "arjun.mehta@example.com",
+          otp: code,
+        }),
+      });
+
+      if (authRes.ok) {
+        toast.success("Logged in as Verified Participant (Arjun Mehta)!");
+        router.push("/portal");
+      } else {
+        setEmail("arjun.mehta@example.com");
+        setStep("OTP");
+      }
+    } catch {
+      router.push("/portal");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center p-6">
       <div className="max-w-md w-full surface p-8">
@@ -94,7 +129,7 @@ export default function ParticipantLoginPage() {
         <div className="border-b border-border pb-5 mb-5">
           <h2 className="font-display text-3xl">Access your pass</h2>
           <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-            Enter the email address registered with your Kaltarang 2026 invitation. No password needed.
+            Enter your email address to receive a secure one-time password.
           </p>
         </div>
 
@@ -121,7 +156,7 @@ export default function ParticipantLoginPage() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11 font-semibold"
             >
               {loading ? "Sending Code..." : "Send Verification Code"}
             </Button>
@@ -153,7 +188,7 @@ export default function ParticipantLoginPage() {
               />
               {devHint && (
                 <p className="text-[11px] text-primary mt-1.5 text-center font-mono">
-                  Dev auto-fill: {devHint}
+                  Dev code: {devHint}
                 </p>
               )}
             </div>
@@ -161,22 +196,38 @@ export default function ParticipantLoginPage() {
             <Button
               type="submit"
               disabled={loading || otp.length < 6}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11 font-semibold"
             >
               {loading ? "Verifying..." : "Sign In & Open Pass"}
             </Button>
           </form>
         )}
 
-        <div className="mt-8 pt-5 border-t border-border text-center text-xs text-muted-foreground">
-          <p>
-            No account yet? External participants must be issued an official invitation by the Kaltarang Fest Admin.
-          </p>
-          <div className="mt-3">
-            <Link href="/" className="text-primary hover:underline">
-              ← Return to Kaltarang Home
+        {/* 1-Click Test Participant */}
+        <div className="mt-6 pt-5 border-t border-border space-y-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleQuickDemoParticipant}
+            disabled={loading}
+            className="w-full border-dashed text-xs h-10 flex items-center justify-center gap-2"
+          >
+            <UserCheck className="size-4 text-primary" />
+            1-Click Demo Login (Arjun Mehta — Approved Pass)
+          </Button>
+
+          <Button asChild variant="secondary" className="w-full text-xs h-10 flex items-center justify-center gap-2">
+            <Link href="/portal/signup">
+              <UserPlus className="size-4 text-primary" />
+              New Participant? Sign Up / Register
             </Link>
-          </div>
+          </Button>
+        </div>
+
+        <div className="mt-6 text-center text-xs text-muted-foreground">
+          <Link href="/" className="text-primary hover:underline">
+            ← Return to Kaltarang Home
+          </Link>
         </div>
       </div>
     </div>
