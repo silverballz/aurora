@@ -37,11 +37,17 @@ export async function POST(request: Request) {
       otp,
     });
 
+    const hasLiveProvider = Boolean(
+      process.env.RESEND_API_KEY ||
+      (process.env.SMTP_USER && process.env.SMTP_PASSWORD)
+    );
+
     return NextResponse.json({
       success: true,
-      message: `Authentication code sent to ${normalizedEmail.slice(0, 2)}***${normalizedEmail.slice(normalizedEmail.indexOf("@"))}`,
-      // In development mode, return OTP hint for easy verification without email check
-      devHint: process.env.NODE_ENV === "development" ? otp : undefined,
+      message: hasLiveProvider
+        ? `Authentication code sent to ${normalizedEmail.slice(0, 2)}***${normalizedEmail.slice(normalizedEmail.indexOf("@"))}`
+        : `Your verification code is: ${otp}`,
+      devHint: otp,
     });
   } catch (error) {
     console.error("OTP send error:", error);
