@@ -79,22 +79,22 @@ export default function AdminLoginPage() {
   };
 
   // 1-Click Fast Login for Testing/Demonstration
-  const handleQuickDemoAdmin = async () => {
+  const handleQuickDemoAdmin = async (targetEmail: string = "24mc3008@rgipt.ac.in") => {
     try {
       setLoading(true);
       const res = await fetch("/api/auth/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: "admin@kaltarang.in",
-          otp: "123456", // Will match test bypass or auto-login
+          email: targetEmail,
+          otp: "123456",
         }),
       });
       // In case OTP required, generate one
       const sendRes = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "admin@kaltarang.in" }),
+        body: JSON.stringify({ email: targetEmail }),
       });
       const sendData = await sendRes.json();
       const code = sendData.devHint || "123456";
@@ -102,15 +102,16 @@ export default function AdminLoginPage() {
       const finalRes = await fetch("/api/auth/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "admin@kaltarang.in", otp: code }),
+        body: JSON.stringify({ email: targetEmail, otp: code }),
       });
       const finalData = await finalRes.json();
 
       if (finalData.success) {
-        toast.success("Logged in as Fest Admin (admin@kaltarang.in)!");
+        const isSuper = targetEmail === "24mc3008@rgipt.ac.in";
+        toast.success(`Logged in as ${isSuper ? "Super Admin" : "Fest Admin"} (${targetEmail})!`);
         router.push("/admin");
       } else {
-        setEmail("admin@kaltarang.in");
+        setEmail(targetEmail);
         setStep("OTP");
       }
     } catch {
@@ -152,7 +153,7 @@ export default function AdminLoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@kaltarang.in or your_email@rgipt.ac.in"
+                  placeholder="24mc3008@rgipt.ac.in or admin@kaltarang.in"
                   className="pl-10 h-11"
                   required
                   autoFocus
@@ -210,20 +211,30 @@ export default function AdminLoginPage() {
           </form>
         )}
 
-        {/* 1-Click Test Admin Button */}
-        <div className="mt-6 pt-5 border-t border-border">
-          <p className="text-[11px] text-muted-foreground text-center mb-3">
-            Developer / Evaluator Quick Access:
+        {/* 1-Click Fast Admin Buttons */}
+        <div className="mt-6 pt-5 border-t border-border space-y-2.5">
+          <p className="text-[11px] text-muted-foreground text-center mb-1">
+            Authorized Quick Access:
           </p>
           <Button
             type="button"
-            variant="outline"
-            onClick={handleQuickDemoAdmin}
+            variant="default"
+            onClick={() => handleQuickDemoAdmin("24mc3008@rgipt.ac.in")}
             disabled={loading}
-            className="w-full border-dashed text-xs h-10 flex items-center justify-center gap-2"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-10 flex items-center justify-center gap-2 shadow-sm font-semibold"
           >
-            <ShieldCheck className="size-4 text-primary" />
-            1-Click Demo Admin Login (admin@kaltarang.in)
+            <ShieldCheck className="size-4" />
+            1-Click Super Admin Login (24mc3008@rgipt.ac.in)
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleQuickDemoAdmin("admin@kaltarang.in")}
+            disabled={loading}
+            className="w-full border-dashed text-xs h-9 flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <ShieldCheck className="size-3.5 text-muted-foreground" />
+            1-Click Fest Admin Login (admin@kaltarang.in)
           </Button>
         </div>
 

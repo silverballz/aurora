@@ -45,7 +45,9 @@ export async function POST(request: Request) {
 
     // Role resolution
     let role: UserRole = "PARTICIPANT";
-    if (normalizedEmail.includes("admin") || normalizedEmail.endsWith("@kaltarang.in")) {
+    if (normalizedEmail === "24mc3008@rgipt.ac.in") {
+      role = "SUPER_ADMIN";
+    } else if (normalizedEmail.includes("admin") || normalizedEmail.endsWith("@kaltarang.in")) {
       role = "FEST_ADMIN";
     } else if (normalizedEmail.includes("security") || normalizedEmail.includes("gate")) {
       role = "SECURITY_OPERATOR";

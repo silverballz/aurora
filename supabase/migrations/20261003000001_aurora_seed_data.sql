@@ -61,3 +61,9 @@ VALUES
     'ACTIVE'
   )
 ON CONFLICT DO NOTHING;
+
+-- Seed Super Admin User (24mc3008@rgipt.ac.in)
+INSERT INTO public.users (email, mobile, role, status, full_name)
+VALUES
+  ('24mc3008@rgipt.ac.in', '+919876543210', 'SUPER_ADMIN', 'ACTIVE', 'RGIPT Super Admin')
+ON CONFLICT (email) DO NOTHING;

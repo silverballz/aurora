@@ -104,7 +104,21 @@ export function initializeSeedData() {
   ];
   defaultEvents.forEach((e) => memoryStore.events.set(e.id, e));
 
-  // Default Admin User
+  // Super Admin User (24mc3008@rgipt.ac.in)
+  const superAdminUser: User = {
+    id: "usr-super-admin-1",
+    auth_user_id: "auth-super-admin-1",
+    email: "24mc3008@rgipt.ac.in",
+    mobile: "+919876543210",
+    role: "SUPER_ADMIN",
+    status: "ACTIVE",
+    full_name: "RGIPT Super Admin (24mc3008)",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  memoryStore.users.set(superAdminUser.id, superAdminUser);
+
+  // Default Fest Admin User
   const adminUser: User = {
     id: "usr-admin-1",
     auth_user_id: "auth-admin-1",
