@@ -17,8 +17,14 @@ export async function middleware(request: NextRequest) {
 
   // 2. Protect Admin APIs (/api/admin/*)
   if (pathname.startsWith("/api/admin")) {
-    // Allow /api/admin/occupancy for authenticated GUARD as well so scanner shows live occupancy
-    if (pathname === "/api/admin/occupancy" && session && (session.role === "ADMIN" || session.role === "GUARD")) {
+    // Allow occupancy, pending (approved roster), and activity for authenticated GUARD as well
+    if (
+      (pathname === "/api/admin/occupancy" ||
+        pathname === "/api/admin/pending" ||
+        pathname === "/api/admin/activity") &&
+      session &&
+      (session.role === "ADMIN" || session.role === "GUARD")
+    ) {
       return NextResponse.next();
     }
     if (!session || session.role !== "ADMIN") {

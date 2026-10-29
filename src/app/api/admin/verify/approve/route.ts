@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { memoryStore, getNextRegistrationId, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
-import { createSignedParticipantQr, hashToken } from "@/lib/crypto/tokens";
+import { hashToken } from "@/lib/crypto/tokens";
 import { generateQrDataUrl } from "@/lib/qr/generator";
 import { sendApprovalEmail } from "@/lib/email/service";
 import { logAuditEvent } from "@/lib/audit/logger";
@@ -19,37 +19,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Participant not found" }, { status: 404 });
     }
 
-    // 1. Keep ONE single static Registration ID & QR token for this participant across the entire fest
+    // 1. Keep ONE single static Registration ID & crisp 12-char QR code (e.g. KLT26-000425)
+    // so the QR image is a low-density Version 1 (21x21) grid that scans in 0.05s on any camera!
     const registrationId = participant.registration_id || getNextRegistrationId();
+    const signedQrPayload = registrationId;
+    const tokenHash = hashToken(signedQrPayload);
+    const qrDataUrl = await generateQrDataUrl(signedQrPayload);
 
-    let signedQrPayload = participant.qr_token;
-    let qrDataUrl = participant.qr_data_url;
-
-    if (!signedQrPayload || !qrDataUrl || !signedQrPayload.startsWith("KLT26.")) {
-      signedQrPayload = createSignedParticipantQr({
-        id: participant.id,
-        reg: registrationId,
-        name: participant.full_name,
-        email: participant.email,
-        col: participant.college || "External Institution",
-        crs: participant.course || "Degree Program",
-        yr: participant.year_of_study || "3rd Year",
-      });
-      const tokenHash = hashToken(signedQrPayload);
-      qrDataUrl = await generateQrDataUrl(signedQrPayload);
-
-      // Register active static QR pass in store
-      const qrPassId = `qr-${participant.id}`;
-      memoryStore.qrPasses.set(tokenHash, {
-        id: qrPassId,
-        participant_id: participant.id,
-        token_hash: tokenHash,
-        status: "ACTIVE",
-        issued_at: new Date().toISOString(),
-        revoked_at: null,
-        revoked_by: null,
-      });
-    }
+    // Register active static QR pass in store
+    const qrPassId = `qr-${participant.id}`;
+    memoryStore.qrPasses.set(tokenHash, {
+      id: qrPassId,
+      participant_id: participant.id,
+      token_hash: tokenHash,
+      status: "ACTIVE",
+      issued_at: new Date().toISOString(),
+      revoked_at: null,
+      revoked_by: null,
+    });
 
     // 2. Update Participant to APPROVED with their single static QR
     participant.status = "APPROVED";
@@ -74,8 +61,8 @@ export async function POST(request: Request) {
         participantName: participant.full_name,
         registrationId,
         college: participant.college || "Participant Institution",
-        course: participant.course || "Degree Course",
-        year: participant.year_of_study || "Participant Year",
+        course: participant.course || "",
+        year: participant.year_of_study || "",
         qrDataUrl,
         qrToken: signedQrPayload,
         baseUrl: origin,

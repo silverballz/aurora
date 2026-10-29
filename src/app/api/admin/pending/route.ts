@@ -21,6 +21,7 @@ export async function GET(request: Request) {
       (p) =>
         p.full_name.toLowerCase().includes(query) ||
         p.email.toLowerCase().includes(query) ||
+        (p.mobile && p.mobile.toLowerCase().includes(query)) ||
         (p.registration_id && p.registration_id.toLowerCase().includes(query)) ||
         (p.college && p.college.toLowerCase().includes(query))
     );
@@ -34,22 +35,19 @@ export async function GET(request: Request) {
       const pes = Array.from(memoryStore.participantEvents.values()).filter((pe) => pe.participant_id === p.id);
       const events = pes.map((pe) => memoryStore.events.get(pe.event_id)).filter(Boolean);
 
-      let paymentRef = p.payment_reference || null;
-      if (!paymentRef && p.invitation_id && memoryStore.invitations.has(p.invitation_id)) {
-        paymentRef = memoryStore.invitations.get(p.invitation_id)?.payment_reference || null;
-      }
-
       let qrDataUrl = p.qr_data_url || null;
-      if (!qrDataUrl && p.status === "APPROVED" && (p.qr_token || p.registration_id)) {
-        qrDataUrl = await generateQrDataUrl(p.qr_token || p.registration_id!);
-        p.qr_data_url = qrDataUrl;
+      if (p.status === "APPROVED" && p.registration_id) {
+        if (!qrDataUrl || (p.qr_token && p.qr_token.startsWith("KLT26."))) {
+          p.qr_token = p.registration_id;
+          qrDataUrl = await generateQrDataUrl(p.registration_id);
+          p.qr_data_url = qrDataUrl;
+        }
       }
 
       return {
         ...p,
         documents: docs,
         events,
-        payment_reference: paymentRef || "ONLINE-PAID",
         qr_data_url: qrDataUrl,
       };
     })

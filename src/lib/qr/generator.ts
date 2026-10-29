@@ -10,20 +10,21 @@ export interface GenerateQrOptions {
 }
 
 /**
- * Generates a base64 Data URL PNG of the QR code
+ * Generates a high-contrast, low-density base64 Data URL PNG of the QR code
+ * optimized for instant mobile & webcam scanning.
  */
 export async function generateQrDataUrl(
   text: string,
   options?: GenerateQrOptions
 ): Promise<string> {
   return await QRCode.toDataURL(text, {
-    width: options?.width || 300,
-    margin: options?.margin || 2,
+    width: options?.width || 400,
+    margin: options?.margin || 4,
     color: {
       dark: options?.color?.dark || "#000000",
       light: options?.color?.light || "#ffffff",
     },
-    errorCorrectionLevel: "H",
+    errorCorrectionLevel: "M",
   });
 }
 
@@ -36,12 +37,12 @@ export async function generateQrSvg(
 ): Promise<string> {
   return await QRCode.toString(text, {
     type: "svg",
-    width: options?.width || 300,
-    margin: options?.margin || 2,
+    width: options?.width || 400,
+    margin: options?.margin || 4,
     color: {
       dark: options?.color?.dark || "#000000",
       light: options?.color?.light || "#ffffff",
     },
-    errorCorrectionLevel: "H",
+    errorCorrectionLevel: "M",
   });
 }

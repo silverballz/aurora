@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import {
   AlertTriangle,
   Camera,
@@ -10,8 +9,11 @@ import {
   LogIn,
   LogOut,
   QrCode,
+  RefreshCw,
+  Search,
   ShieldAlert,
   Upload,
+  UserCheck,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,17 +22,10 @@ import { toast } from "sonner";
 
 export default function SecurityGatePage() {
   const [selectedGate, setSelectedGate] = useState("gate-main");
-  const [operatorCode, setOperatorCode] = useState("SEC-014 (Gate Operator)");
+  const [operatorCode, setOperatorCode] = useState("SEC-014 (Gate Guard)");
   const [occupancy, setOccupancy] = useState<any>(null);
-
-  useEffect(() => {
-    try {
-      const savedGate = localStorage.getItem("aurora_gate_id");
-      const savedOp = localStorage.getItem("aurora_operator_code");
-      if (savedGate) setSelectedGate(savedGate);
-      if (savedOp) setOperatorCode(`${savedOp} (Gate Operator)`);
-    } catch {}
-  }, []);
+  const [approvedList, setApprovedList] = useState<any[]>([]);
+  const [rosterSearch, setRosterSearch] = useState("");
 
   // Scanner State
   const [scanning, setScanning] = useState(false);
@@ -49,50 +44,109 @@ export default function SecurityGatePage() {
   const [overrideReason, setOverrideReason] = useState("");
 
   const html5QrCodeRef = useRef<any>(null);
+  const scanLockRef = useRef(false);
 
-  const fetchStats = async () => {
+  const fetchStatsAndRoster = async () => {
     try {
-      const res = await fetch("/api/admin/occupancy");
-      const data = await res.json();
-      setOccupancy(data);
+      const [occRes, rosterRes] = await Promise.all([
+        fetch("/api/admin/occupancy"),
+        fetch("/api/admin/pending?status=APPROVED"),
+      ]);
+      if (occRes.ok) {
+        setOccupancy(await occRes.json());
+      }
+      if (rosterRes.ok) {
+        const rData = await rosterRes.json();
+        setApprovedList(rData.participants || []);
+      }
     } catch (e) {
       console.error(e);
     }
   };
 
   useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 6000);
+    try {
+      const savedGate = localStorage.getItem("aurora_gate_id");
+      const savedOp = localStorage.getItem("aurora_operator_code");
+      if (savedGate) setSelectedGate(savedGate);
+      if (savedOp) setOperatorCode(`${savedOp} (Gate Guard)`);
+    } catch {}
+
+    fetchStatsAndRoster();
+    const interval = setInterval(fetchStatsAndRoster, 15000);
     return () => {
       clearInterval(interval);
       stopCamera();
     };
   }, []);
 
-  // Real Live QR Scanner using html5-qrcode
+  const stopCamera = async () => {
+    try {
+      if (html5QrCodeRef.current) {
+        const scanner = html5QrCodeRef.current;
+        html5QrCodeRef.current = null;
+        try {
+          if (scanner.isScanning) {
+            await scanner.stop();
+          }
+        } catch {}
+        try {
+          scanner.clear();
+        } catch {}
+      }
+    } catch {}
+    setScanning(false);
+  };
+
+  // Real Live QR Scanner using html5-qrcode with automatic camera fallback
   const startCamera = async () => {
     try {
       setScanError(null);
       setScannedResult(null);
+      scanLockRef.current = false;
       setScanning(true);
 
       const { Html5Qrcode } = await import("html5-qrcode");
       setTimeout(async () => {
-        try {
-          const scanner = new Html5Qrcode("aurora-qr-reader");
-          html5QrCodeRef.current = scanner;
-          await scanner.start(
-            { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 240, height: 240 } },
-            (decodedText: string) => {
-              evaluateToken(decodedText);
-            },
-            () => {}
-          );
-        } catch (err) {
-          console.warn("Camera init warning:", err);
-          toast.error("Camera unavailable or permission denied. You can upload a QR image or enter Registration ID below.");
+        const container = document.getElementById("aurora-qr-reader");
+        if (!container) {
           setScanning(false);
+          return;
+        }
+
+        const scanner = new Html5Qrcode("aurora-qr-reader");
+        html5QrCodeRef.current = scanner;
+
+        const onScanSuccess = async (decodedText: string) => {
+          if (scanLockRef.current || !decodedText) return;
+          scanLockRef.current = true;
+          await stopCamera();
+          await evaluateToken(decodedText);
+        };
+
+        const config = { fps: 12, qrbox: { width: 250, height: 250 } };
+
+        try {
+          await scanner.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
+        } catch {
+          try {
+            // Fallback for laptops/front webcams
+            await scanner.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+          } catch {
+            try {
+              const cams = await Html5Qrcode.getCameras();
+              if (cams && cams.length > 0) {
+                await scanner.start(cams[0].id, config, onScanSuccess, () => {});
+              } else {
+                throw new Error("No camera found");
+              }
+            } catch {
+              toast.error(
+                "Camera unavailable or permission denied. You can upload a QR image or use the Approved Roster below."
+              );
+              setScanning(false);
+            }
+          }
         }
       }, 150);
     } catch {
@@ -101,39 +155,48 @@ export default function SecurityGatePage() {
     }
   };
 
-  const stopCamera = async () => {
-    try {
-      if (html5QrCodeRef.current) {
-        const scanner = html5QrCodeRef.current;
-        html5QrCodeRef.current = null;
-        if (scanner.isScanning) {
-          await scanner.stop();
-        }
-        scanner.clear();
-      }
-    } catch {
-      // ignore cleanup errors
-    }
-    setScanning(false);
-  };
-
   const handleScanImageFile = async (file: File) => {
     try {
       setEvaluating(true);
+      setScanError(null);
+
+      // 1. Try native BarcodeDetector first if supported (instant on Chrome/Android/macOS)
+      if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+        try {
+          const BarcodeDetectorClass = (window as any).BarcodeDetector;
+          const detector = new BarcodeDetectorClass({ formats: ["qr_code"] });
+          const bitmap = await createImageBitmap(file);
+          const barcodes = await detector.detect(bitmap);
+          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+            await evaluateToken(barcodes[0].rawValue);
+            return;
+          }
+        } catch {}
+      }
+
+      // 2. Fallback to html5-qrcode inside offscreen sized container
       const { Html5Qrcode } = await import("html5-qrcode");
       const tempScanner = new Html5Qrcode("aurora-qr-file-reader");
       const decodedText = await tempScanner.scanFile(file, false);
-      tempScanner.clear();
+      try {
+        tempScanner.clear();
+      } catch {}
       await evaluateToken(decodedText);
     } catch {
-      toast.error("Could not read a valid QR code from that image.");
+      toast.error(
+        "Could not read QR from that image. You can also enter the Registration ID (e.g. 425) or tap the participant in the Approved Roster below!"
+      );
       setEvaluating(false);
     }
   };
 
-  // Evaluate scanned QR token or Registration ID
+  // Evaluate scanned QR token, Registration ID, or Email
   const evaluateToken = async (tokenString: string) => {
-    if (!tokenString) return;
+    const clean = tokenString.trim();
+    if (!clean) {
+      toast.error("Please enter a Registration ID, Name, or Email, or scan a QR pass.");
+      return;
+    }
     try {
       setEvaluating(true);
       setScanError(null);
@@ -142,26 +205,26 @@ export default function SecurityGatePage() {
       const res = await fetch("/api/security/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tokenString.trim(), gate_id: selectedGate }),
+        body: JSON.stringify({ token: clean, gate_id: selectedGate }),
       });
       const data = await res.json();
 
       if (!res.ok || !data.valid) {
-        setScanError(data.message || "Invalid or unverified QR pass.");
+        setScanError(data.message || data.error || "Invalid or unverified QR pass.");
         setScannedResult(null);
       } else {
         setScannedResult(data);
         toast.success(`Verified: ${data.participant.full_name} (${data.participant.registration_id})`);
       }
     } catch {
-      setScanError("Network error validating pass. Please reconnect.");
+      setScanError("Network error validating pass. Please try again.");
     } finally {
       setEvaluating(false);
     }
   };
 
-  // ALLOW ENTRY
-  const handleAllowEntry = async () => {
+  // ALLOW ENTRY (Check-In)
+  const handleAllowEntry = async (force = false) => {
     if (!scannedResult?.participant) return;
     try {
       setActionLoading(true);
@@ -170,28 +233,39 @@ export default function SecurityGatePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           participant_id: scannedResult.participant.id,
+          participant_snapshot: scannedResult.participant,
           gate_id: selectedGate,
           operator_id: "usr-sec-1",
+          force,
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.message || "Entry blocked!");
+        toast.error(data.message || data.error || "Entry blocked!");
         if (data.blocked) {
           setScanError(data.message);
-          setScannedResult((prev: any) => ({
-            ...prev,
-            participant: { ...prev.participant, campus_status: "INSIDE" },
-          }));
+          setScannedResult((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  participant: { ...prev.participant, campus_status: "INSIDE" },
+                }
+              : prev
+          );
         }
       } else {
+        setScanError(null);
         toast.success(data.message);
-        setScannedResult((prev: any) => ({
-          ...prev,
-          participant: { ...prev.participant, campus_status: "INSIDE" },
-        }));
-        fetchStats();
+        setScannedResult((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                participant: { ...prev.participant, campus_status: "INSIDE" },
+              }
+            : prev
+        );
+        fetchStatsAndRoster();
       }
     } catch {
       toast.error("Network error executing entry.");
@@ -200,8 +274,8 @@ export default function SecurityGatePage() {
     }
   };
 
-  // ALLOW EXIT
-  const handleAllowExit = async () => {
+  // ALLOW EXIT (Check-Out)
+  const handleAllowExit = async (force = false) => {
     if (!scannedResult?.participant) return;
     try {
       setActionLoading(true);
@@ -210,27 +284,79 @@ export default function SecurityGatePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           participant_id: scannedResult.participant.id,
+          participant_snapshot: scannedResult.participant,
           gate_id: selectedGate,
           operator_id: "usr-sec-1",
+          force,
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.message || "Exit blocked!");
+        toast.error(data.message || data.error || "Exit blocked!");
         if (data.blocked) {
           setScanError(data.message);
+          setScannedResult((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  participant: { ...prev.participant, campus_status: "OUTSIDE" },
+                }
+              : prev
+          );
         }
       } else {
+        setScanError(null);
         toast.success(data.message);
-        setScannedResult((prev: any) => ({
-          ...prev,
-          participant: { ...prev.participant, campus_status: "OUTSIDE" },
-        }));
-        fetchStats();
+        setScannedResult((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                participant: { ...prev.participant, campus_status: "OUTSIDE" },
+              }
+            : prev
+        );
+        fetchStatsAndRoster();
       }
     } catch {
       toast.error("Network error executing exit.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Direct 1-Tap Check-In / Check-Out from Approved Roster
+  const handleQuickRosterAction = async (p: any, action: "ENTRY" | "EXIT") => {
+    try {
+      setActionLoading(true);
+      const endpoint = action === "ENTRY" ? "/api/security/entry" : "/api/security/exit";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participant_id: p.id,
+          participant_snapshot: p,
+          gate_id: selectedGate,
+          operator_id: "usr-sec-1",
+          force: true,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setScannedResult({
+          valid: true,
+          participant: {
+            ...p,
+            campus_status: data.campus_status,
+          },
+        });
+        fetchStatsAndRoster();
+      } else {
+        toast.error(data.message || data.error || "Action failed");
+      }
+    } catch {
+      toast.error("Network error.");
     } finally {
       setActionLoading(false);
     }
@@ -268,7 +394,7 @@ export default function SecurityGatePage() {
           participant: { ...prev.participant, campus_status: data.campus_status },
         }));
         setScanError(null);
-        fetchStats();
+        fetchStatsAndRoster();
       }
     } catch {
       toast.error("Override network error.");
@@ -279,9 +405,25 @@ export default function SecurityGatePage() {
 
   const isInside = scannedResult?.participant?.campus_status === "INSIDE";
 
+  const filteredRoster = approvedList.filter((p) => {
+    if (!rosterSearch.trim()) return true;
+    const q = rosterSearch.toLowerCase();
+    return (
+      p.full_name?.toLowerCase().includes(q) ||
+      p.registration_id?.toLowerCase().includes(q) ||
+      p.email?.toLowerCase().includes(q) ||
+      p.college?.toLowerCase().includes(q) ||
+      p.mobile?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="min-h-screen bg-security text-security-foreground flex flex-col">
-      <div id="aurora-qr-file-reader" className="hidden" />
+      {/* Offscreen sized container for reliable image QR decoding */}
+      <div
+        id="aurora-qr-file-reader"
+        className="fixed -left-[9999px] top-0 w-[360px] h-[360px] overflow-hidden opacity-0 pointer-events-none"
+      />
 
       {/* High-Contrast Gate Header */}
       <header className="flex items-center justify-between border-b border-security-border px-5 py-4 sm:px-8 bg-security-panel">
@@ -325,15 +467,15 @@ export default function SecurityGatePage() {
 
       {/* Main Console Split */}
       <main className="flex-1 mx-auto grid max-w-6xl w-full gap-8 p-5 sm:p-8 lg:grid-cols-[1.4fr_1fr] lg:py-10">
-        {/* Left Column: Scanner or Verified Participant View */}
+        {/* Left Column: Scanner, Active Participant Card, and Live Check-In Roster */}
         <section className="space-y-6">
           {/* SCANNER VIEW */}
           {!scannedResult && (
             <div className="surface bg-security-panel border-security-border p-6 sm:p-8">
               <p className="section-label text-security-muted">Gate Verification</p>
-              <h2 className="mt-2 font-display text-4xl sm:text-5xl text-white">Scan. Identify. Verify.</h2>
+              <h2 className="mt-2 font-display text-4xl sm:text-5xl text-white">Scan. Identify. Check-In.</h2>
               <p className="mt-2 text-xs text-security-muted">
-                Scan the participant&apos;s single static QR code from their email, upload a QR screenshot, or enter their Registration ID.
+                Scan the participant&apos;s QR code via camera, upload a QR screenshot, or enter their Registration ID (e.g. 424 or KLT26-000424) below.
               </p>
 
               {/* Camera Frame */}
@@ -345,7 +487,7 @@ export default function SecurityGatePage() {
                     <QrCode className="size-20 text-security-muted mx-auto mb-3" />
                     <p className="text-sm font-semibold text-white">QR Camera Scanner Ready</p>
                     <p className="text-xs text-security-muted mt-1">
-                      Tap Start QR Scanner to read QR passes from participant phones
+                      Tap Start Camera QR Scanner or select a participant from the Approved Roster below
                     </p>
                   </div>
                 )}
@@ -379,7 +521,10 @@ export default function SecurityGatePage() {
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) handleScanImageFile(file);
+                          if (file) {
+                            handleScanImageFile(file);
+                          }
+                          e.target.value = "";
                         }}
                       />
                     </label>
@@ -387,28 +532,34 @@ export default function SecurityGatePage() {
                 )}
               </div>
 
-              {/* Registration ID / QR Token Input */}
-              <div className="mt-8 pt-6 border-t border-security-border">
+              {/* Registration ID / Name / Email Input */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  evaluateToken(manualToken);
+                }}
+                className="mt-8 pt-6 border-t border-security-border"
+              >
                 <p className="text-xs text-security-muted mb-2 font-semibold uppercase tracking-wider">
-                  Verify by Registration ID, Email, or QR Token:
+                  Quick Verify by Registration ID (e.g. 424 or KLT26-000424), Name, or Email:
                 </p>
                 <div className="flex gap-2">
                   <Input
                     value={manualToken}
                     onChange={(e) => setManualToken(e.target.value)}
-                    placeholder="Enter Registration ID (e.g. KLT26-000421) or email"
+                    placeholder="Type 424, KLT26-000424, name, or email..."
                     className="text-xs bg-security border-security-border text-white font-mono"
                   />
                   <Button
+                    type="submit"
                     size="sm"
                     disabled={evaluating}
-                    onClick={() => evaluateToken(manualToken || "KLT26-000421")}
-                    className="bg-primary hover:bg-primary/90 shrink-0"
+                    className="bg-primary hover:bg-primary/90 shrink-0 px-4"
                   >
                     {evaluating ? "Checking..." : "Verify Pass"}
                   </Button>
                 </div>
-              </div>
+              </form>
             </div>
           )}
 
@@ -418,28 +569,26 @@ export default function SecurityGatePage() {
               <div className="flex items-start gap-3">
                 <ShieldAlert className="size-6 text-destructive shrink-0 mt-0.5" />
                 <div>
-                  <h3 className="font-display text-2xl font-bold text-destructive">Admission Blocked</h3>
+                  <h3 className="font-display text-2xl font-bold text-destructive">Gate Notice</h3>
                   <p className="text-sm mt-1 leading-relaxed text-destructive">{scanError}</p>
-                  <div className="mt-4 flex gap-3">
+                  <div className="mt-4 flex flex-wrap gap-3">
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => {
                         setScanError(null);
-                        setScannedResult(null);
                       }}
                       className="border-destructive/40 text-xs"
                     >
-                      Clear & Scan Next
+                      Dismiss Notice
                     </Button>
                     {scannedResult?.participant && (
                       <Button
                         size="sm"
-                        variant="destructive"
-                        onClick={() => setOverrideModalOpen(true)}
-                        className="text-xs font-semibold"
+                        onClick={() => handleAllowEntry(true)}
+                        className="bg-success hover:bg-success/90 text-white text-xs font-semibold"
                       >
-                        <KeyRound className="size-3.5 mr-1" /> Supervisor Override
+                        <CheckCircle2 className="size-3.5 mr-1" /> Re-Confirm Check-In (ENTRY)
                       </Button>
                     )}
                   </div>
@@ -456,7 +605,7 @@ export default function SecurityGatePage() {
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-success" />
                   <span className="font-semibold text-sm tracking-wider uppercase text-success">
-                    Verified Static QR Pass
+                    Verified Campus Pass
                   </span>
                 </div>
                 <span
@@ -480,7 +629,7 @@ export default function SecurityGatePage() {
 
                 <div className="space-y-2 text-center sm:text-left">
                   <p className="text-[11px] font-bold text-security-muted uppercase tracking-widest">
-                    Visually Match Attendee With Photo
+                    Match Attendee Face With Registered Live Photo
                   </p>
                   <h2 className="font-display text-4xl text-white font-bold">
                     {scannedResult.participant.full_name}
@@ -488,44 +637,43 @@ export default function SecurityGatePage() {
                   <p className="text-sm font-semibold text-primary">
                     {scannedResult.participant.college || "External Institution"}
                   </p>
-                  <p className="font-mono text-xs text-white font-bold pt-1">
-                    Registration ID: {scannedResult.participant.registration_id}
+                  {scannedResult.participant.mobile && (
+                    <p className="text-xs text-security-muted">{scannedResult.participant.mobile}</p>
+                  )}
+                  <p className="font-mono text-sm text-white font-bold pt-1">
+                    ID: {scannedResult.participant.registration_id}
                   </p>
                 </div>
               </div>
 
-              {/* Data Minimization Note */}
-              <div className="text-[11px] text-security-muted bg-white/5 p-3 rounded flex items-center justify-between">
-                <span>Data minimization active: Aadhaar, full address, and payment records hidden.</span>
-                <span className="text-success font-semibold">✓ Verified</span>
-              </div>
-
-              {/* BIG HIGH-CONTRAST ACTION BUTTONS */}
+              {/* BIG HIGH-CONTRAST CHECK-IN / CHECK-OUT BUTTONS */}
               <div className="grid sm:grid-cols-2 gap-4 pt-2">
                 <Button
                   size="lg"
-                  disabled={actionLoading || isInside}
-                  onClick={handleAllowEntry}
+                  disabled={actionLoading}
+                  onClick={() => handleAllowEntry(true)}
                   className={`h-16 text-lg font-bold shadow-xl ${
                     isInside
-                      ? "opacity-40 cursor-not-allowed bg-muted text-muted-foreground"
+                      ? "bg-success/30 hover:bg-success/50 text-white border border-success/50"
                       : "bg-success hover:bg-success/90 text-white"
                   }`}
                 >
-                  <LogIn className="size-6 mr-2" /> ALLOW ENTRY
+                  <LogIn className="size-6 mr-2" />
+                  {isInside ? "ALREADY INSIDE (RE-LOG)" : "CHECK IN (ALLOW ENTRY)"}
                 </Button>
 
                 <Button
                   size="lg"
-                  disabled={actionLoading || !isInside}
-                  onClick={handleAllowExit}
+                  disabled={actionLoading}
+                  onClick={() => handleAllowExit(true)}
                   className={`h-16 text-lg font-bold shadow-xl ${
                     !isInside
-                      ? "opacity-40 cursor-not-allowed bg-muted text-muted-foreground"
+                      ? "bg-primary/30 hover:bg-primary/50 text-white border border-primary/50"
                       : "bg-primary hover:bg-primary/90 text-white"
                   }`}
                 >
-                  <LogOut className="size-6 mr-2" /> ALLOW EXIT
+                  <LogOut className="size-6 mr-2" />
+                  {!isInside ? "ALREADY OUTSIDE (RE-LOG)" : "CHECK OUT (ALLOW EXIT)"}
                 </Button>
               </div>
 
@@ -537,23 +685,120 @@ export default function SecurityGatePage() {
                   onClick={() => {
                     setScannedResult(null);
                     setScanError(null);
+                    setManualToken("");
                   }}
-                  className="border-security-border text-xs"
+                  className="border-security-border text-white hover:bg-white/10 text-xs"
                 >
-                  Scan Next Participant
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setOverrideModalOpen(true)}
-                  className="text-security-muted hover:text-white text-xs"
-                >
-                  <KeyRound className="size-3.5 mr-1" /> Supervisor Override
+                  ← Scan / Verify Next Participant
                 </Button>
               </div>
             </div>
           )}
+
+          {/* LIVE APPROVED PARTICIPANTS ROSTER (1-TAP CHECK-IN / CHECK-OUT) */}
+          <div className="surface bg-security-panel border-security-border p-6 rounded-lg space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-security-border pb-4">
+              <div>
+                <p className="section-label text-security-muted">Approved Attendees Roster</p>
+                <h3 className="font-display text-2xl text-white mt-0.5">
+                  1-Tap Gate Check-In / Check-Out ({approvedList.length})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative w-full sm:w-56">
+                  <Search className="size-3.5 absolute left-3 top-2.5 text-security-muted" />
+                  <Input
+                    value={rosterSearch}
+                    onChange={(e) => setRosterSearch(e.target.value)}
+                    placeholder="Filter by name, ID, college..."
+                    className="pl-8 h-8 text-xs bg-security border-security-border text-white"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={fetchStatsAndRoster}
+                  className="h-8 border-security-border text-white hover:bg-white/10 text-xs shrink-0"
+                >
+                  <RefreshCw className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {filteredRoster.length === 0 ? (
+              <p className="text-xs text-security-muted py-4 text-center">
+                No approved participants matching filter.
+              </p>
+            ) : (
+              <div className="divide-y divide-security-border max-h-[360px] overflow-y-auto">
+                {filteredRoster.map((p) => {
+                  const pInside = p.campus_status === "INSIDE";
+                  return (
+                    <div
+                      key={p.id}
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div
+                        onClick={() => {
+                          setScannedResult({ valid: true, participant: p });
+                          setScanError(null);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        className="flex items-center gap-3 cursor-pointer hover:opacity-90"
+                      >
+                        <img
+                          src={p.selfie_path || "/assets/participant-avatar.jpg"}
+                          alt={p.full_name}
+                          className="size-11 rounded-md object-cover border border-security-border shrink-0"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-white">{p.full_name}</span>
+                            <span className="font-mono text-xs text-primary font-bold">
+                              {p.registration_id}
+                            </span>
+                          </div>
+                          <p className="text-xs text-security-muted">
+                            {p.college || "College"} · {p.mobile || p.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            pInside ? "bg-success/20 text-success" : "bg-white/10 text-security-muted"
+                          }`}
+                        >
+                          {p.campus_status}
+                        </span>
+
+                        {!pInside ? (
+                          <Button
+                            size="sm"
+                            disabled={actionLoading}
+                            onClick={() => handleQuickRosterAction(p, "ENTRY")}
+                            className="h-8 bg-success hover:bg-success/90 text-white text-xs font-semibold"
+                          >
+                            <LogIn className="size-3.5 mr-1" /> Check In
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={actionLoading}
+                            onClick={() => handleQuickRosterAction(p, "EXIT")}
+                            className="h-8 bg-primary hover:bg-primary/90 text-white text-xs font-semibold"
+                          >
+                            <LogOut className="size-3.5 mr-1" /> Check Out
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
 
         {/* Right Column: Live Gate Status & Recent Movement */}
@@ -582,96 +827,15 @@ export default function SecurityGatePage() {
           </div>
 
           <div className="surface bg-security-panel border-security-border p-6 rounded-lg">
-            <h3 className="section-label text-security-muted mb-4">Security Protocol</h3>
+            <h3 className="section-label text-security-muted mb-4">Guard Check-In Protocol</h3>
             <ul className="space-y-2.5 text-xs text-security-muted leading-relaxed">
-              <li>1. Scan the participant&apos;s single static QR pass from their email.</li>
-              <li>2. Verify the front-facing registered photograph matches the person at the gate.</li>
-              <li>3. If participant is already INSIDE, duplicate entry is automatically blocked.</li>
-              <li>4. Use ALLOW ENTRY when entering campus and ALLOW EXIT when leaving campus.</li>
+              <li>1. Scan the participant&apos;s QR code, enter their ID (e.g. 425), or tap their name in the Approved Roster.</li>
+              <li>2. Visually match the person at the gate with their registered Live Photo.</li>
+              <li>3. Tap CHECK IN (ALLOW ENTRY) when entering campus and CHECK OUT (ALLOW EXIT) when leaving.</li>
             </ul>
           </div>
         </aside>
       </main>
-
-      {/* Supervisor Manual Override Modal */}
-      {overrideModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="surface bg-security-panel border-warning max-w-md w-full p-6 text-white space-y-4 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-security-border pb-3">
-              <h3 className="font-display text-2xl font-bold flex items-center gap-2 text-warning">
-                <AlertTriangle className="size-6 text-warning" /> Supervisor Manual Override
-              </h3>
-              <Button size="icon" variant="ghost" onClick={() => setOverrideModalOpen(false)}>
-                <X className="size-5" />
-              </Button>
-            </div>
-
-            <p className="text-xs text-security-muted leading-relaxed">
-              This action bypasses the automated state machine and creates an auditable administrative event.
-            </p>
-
-            <form onSubmit={handleOverrideSubmit} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-security-muted block mb-1">Target Action</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant={overrideAction === "ENTRY" ? "default" : "outline"}
-                    onClick={() => setOverrideAction("ENTRY")}
-                    className={overrideAction === "ENTRY" ? "bg-success text-white" : "border-security-border"}
-                  >
-                    Force ENTRY
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={overrideAction === "EXIT" ? "default" : "outline"}
-                    onClick={() => setOverrideAction("EXIT")}
-                    className={overrideAction === "EXIT" ? "bg-primary text-white" : "border-security-border"}
-                  >
-                    Force EXIT
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-security-muted block mb-1">
-                  Supervisor PIN (Default: 2026) *
-                </label>
-                <Input
-                  type="password"
-                  value={overridePin}
-                  onChange={(e) => setOverridePin(e.target.value)}
-                  placeholder="Enter 4-digit PIN"
-                  className="bg-security border-security-border text-white text-center font-mono text-xl h-11"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-security-muted block mb-1">
-                  Reason for Override *
-                </label>
-                <Input
-                  value={overrideReason}
-                  onChange={(e) => setOverrideReason(e.target.value)}
-                  placeholder="e.g. Scanner malfunction / Verified manually by supervisor"
-                  className="bg-security border-security-border text-white text-xs"
-                  required
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-security-border">
-                <Button type="button" variant="outline" onClick={() => setOverrideModalOpen(false)} className="border-security-border">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={actionLoading} className="bg-warning text-warning-foreground font-semibold">
-                  Confirm Manual Override
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

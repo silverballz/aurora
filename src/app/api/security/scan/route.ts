@@ -10,7 +10,7 @@ export async function POST(request: Request) {
 
     if (!token || typeof token !== "string") {
       return NextResponse.json(
-        { valid: false, error_code: "INVALID_FORMAT", message: "Scan failed: Invalid QR code format." },
+        { valid: false, error_code: "INVALID_FORMAT", message: "Scan failed: Please scan a QR code or enter a Registration ID." },
         { status: 400 }
       );
     }
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
     const tokenHash = hashToken(rawToken);
 
-    // 2. Look up Participant by QR pass, qr_token, registration_id, or email
+    // 2. Look up Participant by QR pass, registration_id, short numeric ID, email, mobile, or name
     let participant: Participant | undefined;
 
     const qrPass = memoryStore.qrPasses.get(tokenHash);
@@ -51,13 +51,20 @@ export async function POST(request: Request) {
     if (!participant) {
       const upper = trimmed.toUpperCase();
       const lower = trimmed.toLowerCase();
+      const digitsOnly = trimmed.replace(/\D/g, "");
+      const paddedRegId = digitsOnly ? `KLT26-${digitsOnly.padStart(6, "0")}` : "";
+
       for (const p of memoryStore.participants.values()) {
+        const pReg = (p.registration_id || "").toUpperCase();
+        const pMobileDigits = (p.mobile || "").replace(/\D/g, "");
         if (
+          p.id === trimmed ||
           p.qr_token === trimmed ||
           p.qr_token === rawToken ||
-          (p.registration_id && p.registration_id.toUpperCase() === upper) ||
+          (pReg && (pReg === upper || pReg === paddedRegId)) ||
           p.email.toLowerCase() === lower ||
-          p.id === trimmed
+          (digitsOnly.length >= 10 && pMobileDigits.endsWith(digitsOnly.slice(-10))) ||
+          (p.full_name.toLowerCase() === lower && p.status === "APPROVED")
         ) {
           participant = p;
           break;
@@ -65,10 +72,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Serverless / Multi-Instance Hydration:
-    // If the QR token has a valid cryptographic HMAC signature (KLT26.<payload>.<sig>)
-    // and this serverless instance cold-started without the participant in memoryStore,
-    // automatically hydrate the verified participant so Entry/Exit works seamlessly!
+    // 3. Serverless / Multi-Instance Hydration for signed KLT26.<payload>.<sig> QR codes
     if (!participant && signedCheck.valid && signedCheck.claims) {
       const c = signedCheck.claims;
       const now = new Date().toISOString();
@@ -91,7 +95,7 @@ export async function POST(request: Request) {
         student_id_path: null,
         aadhaar_path: null,
         payment_reference: "VERIFIED",
-        qr_token: trimmed,
+        qr_token: c.reg,
         qr_data_url: null,
         status: "APPROVED",
         campus_status: "OUTSIDE",
@@ -109,30 +113,29 @@ export async function POST(request: Request) {
 
     if (!participant) {
       return NextResponse.json(
-        { valid: false, error_code: "INVALID_QR", message: "✕ INVALID QR PASS. Unrecognized credential." },
+        {
+          valid: false,
+          error_code: "INVALID_QR",
+          message: `✕ NOT FOUND: No approved participant matching "${trimmed}".`,
+        },
         { status: 404 }
       );
     }
 
     if (participant.status === "REVOKED") {
       return NextResponse.json(
-        { valid: false, error_code: "ACCESS_REVOKED", message: "✕ ACCESS REVOKED. Entry denied by fest administration." },
+        { valid: false, error_code: "ACCESS_REVOKED", message: `✕ ACCESS REVOKED for ${participant.full_name} (${participant.registration_id}).` },
         { status: 403 }
       );
     }
 
     if (participant.status !== "APPROVED") {
       return NextResponse.json(
-        { valid: false, error_code: "NOT_APPROVED", message: "⚠ REGISTRATION NOT VERIFIED. Participant pending admin approval." },
+        { valid: false, error_code: "NOT_APPROVED", message: `⚠ REGISTRATION PENDING APPROVAL for ${participant.full_name}.` },
         { status: 400 }
       );
     }
 
-    // Minimal event details
-    const pes = Array.from(memoryStore.participantEvents.values()).filter((pe) => pe.participant_id === participant.id);
-    const events = pes.map((pe) => memoryStore.events.get(pe.event_id)?.name).filter(Boolean);
-
-    // Get last entry log if available
     const lastEntry = memoryStore.accessLogs
       .filter((al) => al.participant_id === participant.id && al.action === "ENTRY" && al.result === "ALLOWED")
       .pop();
@@ -143,13 +146,12 @@ export async function POST(request: Request) {
         id: participant.id,
         registration_id: participant.registration_id,
         full_name: participant.full_name,
+        email: participant.email,
+        mobile: participant.mobile,
         college: participant.college,
-        course: participant.course,
-        year_of_study: participant.year_of_study,
         selfie_path: participant.selfie_path || "/assets/participant-avatar.jpg",
         status: participant.status,
         campus_status: participant.campus_status,
-        events,
       },
       token_hash: tokenHash,
       last_entry: lastEntry
