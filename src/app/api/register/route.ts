@@ -12,25 +12,17 @@ export async function POST(request: Request) {
       full_name,
       email,
       mobile,
-      payment_reference,
       college,
-      course,
-      year_of_study,
-      address,
-      city,
-      state,
-      pincode,
       selfie_data_url,
       student_id_data_url,
       student_id_filename,
       aadhaar_data_url,
       aadhaar_filename,
-      selected_event_ids,
     } = body;
 
-    if (!full_name || !email || !mobile || !college || !course) {
+    if (!full_name || !email || !mobile || !college) {
       return NextResponse.json(
-        { error: "Please fill in all required personal and institution details." },
+        { error: "Please fill in your Name, College Name, Mobile Number, and Email Address." },
         { status: 400 }
       );
     }
@@ -38,7 +30,6 @@ export async function POST(request: Request) {
     const normalizedEmail = String(email).trim().toLowerCase();
     const now = new Date().toISOString();
 
-    // Check if participant with this email already exists (e.g. re-submitting)
     let existingParticipant: Participant | undefined;
     for (const p of memoryStore.participants.values()) {
       if (p.email.toLowerCase() === normalizedEmail) {
@@ -52,22 +43,22 @@ export async function POST(request: Request) {
     const participant: Participant = {
       id: participantId,
       user_id: existingParticipant?.user_id || `usr-${Date.now()}`,
-      invitation_id: existingParticipant?.invitation_id || null,
+      invitation_id: null,
       registration_id: existingParticipant?.registration_id || null,
       full_name: String(full_name).trim(),
       email: normalizedEmail,
       mobile: String(mobile).trim(),
       college: String(college).trim(),
-      course: String(course).trim(),
-      year_of_study: String(year_of_study || "3rd Year").trim(),
-      address: String(address || "").trim(),
-      city: String(city || "").trim(),
-      state: String(state || "").trim(),
-      pincode: String(pincode || "").trim(),
+      course: "",
+      year_of_study: "",
+      address: "",
+      city: "",
+      state: "",
+      pincode: "",
       selfie_path: selfie_data_url || existingParticipant?.selfie_path || "/assets/participant-avatar.jpg",
       student_id_path: student_id_data_url || existingParticipant?.student_id_path || null,
       aadhaar_path: aadhaar_data_url || existingParticipant?.aadhaar_path || null,
-      payment_reference: String(payment_reference || "ONLINE-PAID").trim(),
+      payment_reference: "N/A",
       qr_token: existingParticipant?.qr_token || null,
       qr_data_url: existingParticipant?.qr_data_url || null,
       status: "UNDER_REVIEW",
@@ -83,7 +74,6 @@ export async function POST(request: Request) {
 
     memoryStore.participants.set(participantId, participant);
 
-    // Record Document metadata
     if (student_id_data_url || student_id_filename) {
       const docId = `doc-stu-${participantId}`;
       memoryStore.documents.set(docId, {
@@ -118,25 +108,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // Record selected events
-    if (Array.isArray(selected_event_ids)) {
-      for (const [key, pe] of memoryStore.participantEvents.entries()) {
-        if (pe.participant_id === participantId) {
-          memoryStore.participantEvents.delete(key);
-        }
-      }
-      for (const eventId of selected_event_ids) {
-        const peId = `pe-${participantId}-${eventId}`;
-        memoryStore.participantEvents.set(peId, {
-          id: peId,
-          participant_id: participantId,
-          event_id: eventId,
-          status: "REGISTERED",
-          created_at: now,
-        });
-      }
-    }
-
     saveStoreToDisk();
 
     await logAuditEvent({
@@ -147,7 +118,7 @@ export async function POST(request: Request) {
         full_name: participant.full_name,
         email: participant.email,
         college: participant.college,
-        payment_reference: participant.payment_reference,
+        mobile: participant.mobile,
       },
     });
 

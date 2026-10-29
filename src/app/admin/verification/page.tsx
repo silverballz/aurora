@@ -300,7 +300,7 @@ export default function AdminVerificationPage() {
                     <span className={p.registration_id ? "text-primary font-bold" : ""}>
                       {p.registration_id || "PENDING REVIEW"}
                     </span>
-                    <span>{p.payment_reference || "PAID"}</span>
+                    <span>{p.mobile}</span>
                   </div>
                 </div>
               );
@@ -347,8 +347,8 @@ export default function AdminVerificationPage() {
                 </div>
 
                 <div className="text-right text-xs bg-muted/50 p-2.5 rounded-md border border-border">
-                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wider">Payment Ref</span>
-                  <span className="font-mono font-bold">{selectedParticipant.payment_reference || "VERIFIED"}</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wider">College</span>
+                  <span className="font-semibold">{selectedParticipant.college || "—"}</span>
                 </div>
               </div>
 
@@ -507,30 +507,23 @@ export default function AdminVerificationPage() {
 
               {/* Details List */}
               <div className="p-6">
-                <p className="section-label text-primary">Candidate Dossier</p>
-                <dl className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                <p className="section-label text-primary">Participant Details</p>
+                <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                   <div>
-                    <dt className="text-muted-foreground">College / University</dt>
+                    <dt className="text-muted-foreground">Full Name</dt>
+                    <dd className="font-semibold text-sm mt-0.5">{selectedParticipant.full_name}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">College Name</dt>
                     <dd className="font-semibold text-sm mt-0.5">{selectedParticipant.college || "—"}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">Course & Year</dt>
-                    <dd className="font-semibold text-sm mt-0.5">
-                      {selectedParticipant.course || "—"} ({selectedParticipant.year_of_study || "—"})
-                    </dd>
+                    <dt className="text-muted-foreground">Mobile Number</dt>
+                    <dd className="font-semibold text-sm mt-0.5">{selectedParticipant.mobile || "—"}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">Campus State</dt>
-                    <dd className="font-semibold text-sm mt-0.5 uppercase tracking-wider text-primary">
-                      {selectedParticipant.campus_status}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-3">
-                    <dt className="text-muted-foreground">Permanent Address</dt>
-                    <dd className="font-medium mt-0.5">
-                      {selectedParticipant.address || "—"}, {selectedParticipant.city} ({selectedParticipant.state} -{" "}
-                      {selectedParticipant.pincode})
-                    </dd>
+                    <dt className="text-muted-foreground">Email Address</dt>
+                    <dd className="font-semibold text-sm mt-0.5 break-all">{selectedParticipant.email}</dd>
                   </div>
                 </dl>
               </div>

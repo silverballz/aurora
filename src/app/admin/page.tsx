@@ -136,7 +136,7 @@ export default function AdminOverviewPage() {
                   <div>
                     <h3 className="font-semibold text-sm">{p.full_name}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {p.college || "College"} · {p.course || "Course"}
+                      {p.college || "College"} · {p.email}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

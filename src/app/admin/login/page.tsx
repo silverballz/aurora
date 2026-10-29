@@ -3,117 +3,102 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { KeyRound, Mail, ShieldCheck } from "lucide-react";
+import { KeyRound, Lock, Mail, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Brand } from "@/components/aurora-shell";
 import { toast } from "sonner";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("24mc3008@rgipt.ac.in");
-  const [passcode, setPasscode] = useState("2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
-      toast.error("Please enter admin email.");
-      return;
-    }
-    if (passcode !== "2026" && passcode !== "kaltarang2026" && passcode !== "admin") {
-      toast.error("Invalid admin passcode. Default passcode is 2026.");
+    if (!email || !password) {
+      toast.error("Please enter your administrator email and password.");
       return;
     }
 
     try {
       setLoading(true);
-      await fetch("/api/auth/otp/verify", {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          otp: "123456",
+          identifier: email.trim(),
+          password,
+          role: "ADMIN",
         }),
       });
-      toast.success(`Signed in as ${email.trim().toLowerCase()}`);
-      router.push("/admin/verification");
-    } catch {
-      router.push("/admin/verification");
-    } finally {
-      setLoading(false);
-    }
-  };
+      const data = await res.json();
 
-  const handleQuickLogin = async (targetEmail: string) => {
-    try {
-      setLoading(true);
-      await fetch("/api/auth/otp/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: targetEmail,
-          otp: "123456",
-        }),
-      });
-      toast.success(`Signed in as ${targetEmail}`);
+      if (!res.ok) {
+        toast.error(data.error || "Invalid administrator credentials.");
+        return;
+      }
+
+      toast.success("Administrator authenticated!");
       router.push("/admin/verification");
+      router.refresh();
     } catch {
-      router.push("/admin/verification");
+      toast.error("Network error during login.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center items-center p-6">
-      <div className="max-w-md w-full surface p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <img src="/kaltarang-logo.svg" alt="Kaltarang Logo" className="h-9 w-7 object-contain" />
-          <div>
-            <h1 className="font-display text-2xl leading-none">Aurora</h1>
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
-              Admin Console
-            </p>
+    <div className="min-h-screen bg-sidebar text-sidebar-foreground flex flex-col justify-center items-center p-6">
+      <div className="max-w-md w-full surface bg-card text-card-foreground border-border p-8 shadow-2xl">
+        <div className="mb-6">
+          <Brand />
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest">
+            <ShieldCheck className="size-3.5" /> Restricted Administration Portal
           </div>
         </div>
 
-        <div className="border-b border-border pb-5 mb-5">
-          <h2 className="font-display text-3xl">Admin Sign In</h2>
+        <div className="border-b border-border pb-5 mb-6">
+          <h1 className="font-display text-3xl">Administrator Sign In</h1>
           <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-            Direct administrator sign-in (No OTP required). Review participant registrations and issue single static QR passes.
+            Authorized Kaltarang 2026 verification administrator access only.
           </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-2">
-              Admin Email Address
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1.5">
+              Admin Email *
             </label>
             <div className="relative">
-              <Mail className="absolute left-3.5 top-3 size-4 text-muted-foreground" />
+              <Mail className="size-4 absolute left-3 top-3 text-muted-foreground" />
               <Input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="24mc3008@rgipt.ac.in"
-                className="pl-10 h-11"
+                placeholder="Enter administrator email"
+                className="pl-9 h-10 text-sm"
+                autoComplete="username"
                 required
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-2">
-              Admin Passcode (Default: 2026)
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1.5">
+              Password *
             </label>
             <div className="relative">
-              <KeyRound className="absolute left-3.5 top-3 size-4 text-muted-foreground" />
+              <KeyRound className="size-4 absolute left-3 top-3 text-muted-foreground" />
               <Input
                 type="password"
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                placeholder="2026"
-                className="pl-10 h-11 font-mono"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter administrator password"
+                className="pl-9 h-10 text-sm"
+                autoComplete="current-password"
                 required
               />
             </div>
@@ -122,32 +107,16 @@ export default function AdminLoginPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11 font-semibold"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11 font-semibold mt-2"
           >
-            {loading ? "Signing In..." : "Sign In to Admin Console"}
+            <Lock className="size-4 mr-2" />
+            {loading ? "Signing In..." : "Sign In to Admin Portal"}
           </Button>
         </form>
 
-        {/* 1-Click Fast Admin Buttons */}
-        <div className="mt-6 pt-5 border-t border-border space-y-2.5">
-          <p className="text-[11px] text-muted-foreground text-center mb-1">
-            Instant 1-Click Access:
-          </p>
-          <Button
-            type="button"
-            variant="default"
-            onClick={() => handleQuickLogin("24mc3008@rgipt.ac.in")}
-            disabled={loading}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-10 flex items-center justify-center gap-2 shadow-sm font-semibold"
-          >
-            <ShieldCheck className="size-4" />
-            1-Click Super Admin (24mc3008@rgipt.ac.in)
-          </Button>
-        </div>
-
-        <div className="mt-6 text-center text-xs text-muted-foreground">
-          <Link href="/" className="text-primary hover:underline">
-            ← Return to Home
+        <div className="mt-6 pt-5 border-t border-border text-center text-xs text-muted-foreground">
+          <Link href="/" className="hover:text-foreground transition-colors">
+            ← Return to Kaltarang Home
           </Link>
         </div>
       </div>

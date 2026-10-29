@@ -3,48 +3,57 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Camera, KeyRound, QrCode, Shield, ShieldCheck } from "lucide-react";
+import { Camera, KeyRound, Lock, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 export default function SecurityLoginPage() {
   const router = useRouter();
-  const [operatorCode, setOperatorCode] = useState("SEC-014");
+  const [identifier, setIdentifier] = useState("");
   const [gate, setGate] = useState("gate-main");
-  const [pin, setPin] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pin) {
-      toast.error("Please enter the operator gate PIN.");
+    if (!identifier || !password) {
+      toast.error("Please enter the security account ID and password.");
       return;
     }
 
-    if (pin !== "2026" && pin !== "1234") {
-      toast.error("Invalid gate PIN. Default test PIN is 2026.");
-      return;
-    }
-
-    setLoading(true);
     try {
-      localStorage.setItem("aurora_gate_id", gate);
-      localStorage.setItem("aurora_operator_code", operatorCode);
-    } catch {}
-    toast.success(`Operator ${operatorCode} authenticated at ${gate.toUpperCase()}!`);
-    setTimeout(() => {
+      setLoading(true);
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identifier: identifier.trim(),
+          password,
+          role: "GUARD",
+          gate,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Invalid security guard credentials.");
+        return;
+      }
+
+      try {
+        localStorage.setItem("aurora_gate_id", gate);
+        localStorage.setItem("aurora_operator_code", identifier.trim());
+      } catch {}
+
+      toast.success(`Authenticated at ${gate.toUpperCase()}!`);
       router.push("/security");
-    }, 400);
-  };
-
-  const handleQuickDemoOperator = () => {
-    try {
-      localStorage.setItem("aurora_gate_id", gate);
-      localStorage.setItem("aurora_operator_code", operatorCode || "SEC-014");
-    } catch {}
-    toast.success("Logged in as Security Operator (SEC-014)!");
-    router.push("/security");
+      router.refresh();
+    } catch {
+      toast.error("Network error during login.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -61,9 +70,9 @@ export default function SecurityLoginPage() {
         </div>
 
         <div className="border-b border-security-border pb-5 mb-5">
-          <h2 className="font-display text-3xl text-white">Gate Operator Login</h2>
+          <h2 className="font-display text-3xl text-white">Security Guard Login</h2>
           <p className="text-xs text-security-muted mt-1.5 leading-relaxed">
-            Authorized gate personnel only. Select your assigned entrance and authenticate.
+            Authorized RGIPT gate security personnel only. Select your assigned entrance and sign in.
           </p>
         </div>
 
@@ -86,32 +95,37 @@ export default function SecurityLoginPage() {
 
           <div>
             <label className="text-xs font-semibold uppercase tracking-wider text-security-muted block mb-1.5">
-              Operator Badge Code
+              Guard Account ID / Email *
             </label>
-            <Input
-              value={operatorCode}
-              onChange={(e) => setOperatorCode(e.target.value)}
-              placeholder="SEC-014"
-              className="bg-security border-security-border text-white font-mono h-11"
-              required
-            />
+            <div className="relative">
+              <UserCheck className="size-4 absolute left-3 top-3.5 text-security-muted" />
+              <Input
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="Enter guard ID or email"
+                className="bg-security border-security-border text-white pl-9 h-11"
+                autoComplete="username"
+                required
+              />
+            </div>
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-security-muted">
-                Gate Passcode / PIN
-              </label>
-              <span className="text-[11px] text-primary">Default PIN: 2026</span>
+            <label className="text-xs font-semibold uppercase tracking-wider text-security-muted block mb-1.5">
+              Guard Password *
+            </label>
+            <div className="relative">
+              <KeyRound className="size-4 absolute left-3 top-3.5 text-security-muted" />
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter guard password"
+                className="bg-security border-security-border text-white pl-9 h-11"
+                autoComplete="current-password"
+                required
+              />
             </div>
-            <Input
-              type="password"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              placeholder="Enter PIN (2026)"
-              className="bg-security border-security-border text-white font-mono text-center tracking-widest text-lg h-11"
-              required
-            />
           </div>
 
           <Button
@@ -119,23 +133,12 @@ export default function SecurityLoginPage() {
             disabled={loading}
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-12 font-semibold text-base mt-2"
           >
-            <Camera className="size-4 mr-2" /> Launch Gate Scanner
+            <Lock className="size-4 mr-2" />
+            {loading ? "Signing In..." : "Sign In & Launch Scanner"}
           </Button>
         </form>
 
-        {/* 1-Click Test Operator */}
-        <div className="mt-6 pt-5 border-t border-security-border">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleQuickDemoOperator}
-            className="w-full border-security-border text-security-muted hover:text-white hover:bg-white/10 text-xs h-10"
-          >
-            1-Click Demo Security Operator Login
-          </Button>
-        </div>
-
-        <div className="mt-6 text-center text-xs text-security-muted">
+        <div className="mt-6 pt-5 border-t border-security-border text-center text-xs text-security-muted">
           <Link href="/" className="hover:text-white transition-colors">
             ← Return to Kaltarang Home
           </Link>

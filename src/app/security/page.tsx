@@ -309,8 +309,16 @@ export default function SecurityGatePage() {
           <span className="hidden sm:inline-block px-2.5 py-1 rounded-full bg-success/20 text-success text-xs font-bold uppercase tracking-wider">
             ● Online
           </span>
-          <Button asChild size="sm" variant="ghost" className="text-security-muted hover:text-white text-xs">
-            <Link href="/admin/verification">Admin Console</Link>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.href = "/security/login";
+            }}
+            className="text-security-muted hover:text-white text-xs"
+          >
+            Sign Out
           </Button>
         </div>
       </header>
@@ -479,9 +487,6 @@ export default function SecurityGatePage() {
                   </h2>
                   <p className="text-sm font-semibold text-primary">
                     {scannedResult.participant.college || "External Institution"}
-                  </p>
-                  <p className="text-xs text-security-muted">
-                    {scannedResult.participant.course} ({scannedResult.participant.year_of_study})
                   </p>
                   <p className="font-mono text-xs text-white font-bold pt-1">
                     Registration ID: {scannedResult.participant.registration_id}

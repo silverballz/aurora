@@ -113,7 +113,7 @@ export function StaffShell({
           })}
         </nav>
 
-        <div className="m-5 border-t border-sidebar-border pt-4">
+        <div className="m-5 border-t border-sidebar-border pt-4 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Button asChild size="sm" variant="secondary" className="w-full text-xs">
               <Link href="/register">Registration Form</Link>
@@ -122,6 +122,17 @@ export function StaffShell({
               <Link href="/security">Gate Scanner</Link>
             </Button>
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.href = "/admin/login";
+            }}
+            className="w-full text-xs text-sidebar-muted hover:text-white hover:bg-sidebar-accent"
+          >
+            Sign Out (Admin)
+          </Button>
         </div>
       </aside>
 

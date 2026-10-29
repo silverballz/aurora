@@ -74,7 +74,7 @@ export default function AdminParticipantsPage() {
             <tr>
               <th className="py-3.5 px-4 font-semibold">Registration ID</th>
               <th className="py-3.5 px-4 font-semibold">Participant Name</th>
-              <th className="py-3.5 px-4 font-semibold">Institution / Degree</th>
+              <th className="py-3.5 px-4 font-semibold">College / Mobile</th>
               <th className="py-3.5 px-4 font-semibold">Campus State</th>
               <th className="py-3.5 px-4 font-semibold">Status</th>
               <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
@@ -96,7 +96,7 @@ export default function AdminParticipantsPage() {
                   <td className="py-3.5 px-4 font-semibold">{p.full_name}</td>
                   <td className="py-3.5 px-4">
                     <p className="text-foreground">{p.college || "—"}</p>
-                    <p className="text-muted-foreground text-[11px]">{p.course} ({p.year_of_study})</p>
+                    <p className="text-muted-foreground text-[11px]">{p.email} · {p.mobile}</p>
                   </td>
                   <td className="py-3.5 px-4">
                     <span

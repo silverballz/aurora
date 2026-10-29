@@ -207,9 +207,7 @@ export async function sendApprovalEmail(params: {
 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px; background: #ffffff; border: 1px solid #e8e3ec; border-radius: 8px;">
         <tr><td style="padding: 10px 14px; color: #6a6473; border-bottom: 1px solid #e8e3ec;">Participant Name:</td><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #e8e3ec;">${params.participantName}</td></tr>
-        <tr><td style="padding: 10px 14px; color: #6a6473; border-bottom: 1px solid #e8e3ec;">Institution:</td><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #e8e3ec;">${params.college}</td></tr>
-        <tr><td style="padding: 10px 14px; color: #6a6473; border-bottom: 1px solid #e8e3ec;">Course / Degree:</td><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #e8e3ec;">${params.course}</td></tr>
-        <tr><td style="padding: 10px 14px; color: #6a6473;">Year of Study:</td><td style="padding: 10px 14px; font-weight: 600;">${params.year}</td></tr>
+        <tr><td style="padding: 10px 14px; color: #6a6473;">College / Institution:</td><td style="padding: 10px 14px; font-weight: 600;">${params.college}</td></tr>
       </table>
 
       <p style="font-size: 12px; color: #8e8797; margin-top: 24px; border-top: 1px solid #e8e3ec; padding-top: 16px;">
