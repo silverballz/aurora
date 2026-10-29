@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
-  loadStoreFromDisk();
+  await loadStoreFromDisk();
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") || "50", 10);
 

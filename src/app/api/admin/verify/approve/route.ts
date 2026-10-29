@@ -7,7 +7,7 @@ import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const { participant_id, resend } = await request.json();
 
     if (!participant_id) {
@@ -61,7 +61,6 @@ export async function POST(request: Request) {
     participant.updated_at = new Date().toISOString();
 
     memoryStore.participants.set(participant.id, participant);
-    saveStoreToDisk();
 
     // 3. Send Email with the Single Static QR Pass
     let emailSent = false;
@@ -102,7 +101,7 @@ export async function POST(request: Request) {
         deliveredVia,
       },
     });
-    saveStoreToDisk();
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

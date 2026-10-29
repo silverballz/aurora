@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
 import { generateQrDataUrl } from "@/lib/qr/generator";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
-  loadStoreFromDisk();
+  await loadStoreFromDisk();
   const { searchParams } = new URL(request.url);
   const statusFilter = searchParams.get("status") || "UNDER_REVIEW";
   const query = searchParams.get("query")?.toLowerCase();

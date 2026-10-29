@@ -14,6 +14,8 @@ import {
 import { hashToken } from "@/lib/crypto/tokens";
 
 const STORE_FILE_PATH = "/tmp/aurora-kaltarang-2026-store.json";
+const CLOUD_INDEX_TOPIC =
+  process.env.AURORA_CLOUD_TOPIC || "aurora_klt26_rgipt_prod_store_v3_7f91c2e4";
 
 export interface SentEmailRecord {
   id: string;
@@ -56,7 +58,12 @@ export interface AuroraStore {
 
 const globalForAurora = globalThis as unknown as {
   __AURORA_STORE__?: AuroraStore;
+  __AURORA_APPLIED_BLOBS__?: Set<string>;
 };
+
+const appliedBlobKeys: Set<string> =
+  globalForAurora.__AURORA_APPLIED_BLOBS__ || new Set<string>();
+globalForAurora.__AURORA_APPLIED_BLOBS__ = appliedBlobKeys;
 
 function createEmptyStore(): AuroraStore {
   return {
@@ -94,70 +101,201 @@ export const memoryStore: AuroraStore =
 
 globalForAurora.__AURORA_STORE__ = memoryStore;
 
-export function saveStoreToDisk() {
-  try {
-    const serialized = {
-      registrationCounter: memoryStore.registrationCounter,
-      users: Array.from(memoryStore.users.entries()),
-      invitations: Array.from(memoryStore.invitations.entries()),
-      participants: Array.from(memoryStore.participants.entries()),
-      events: Array.from(memoryStore.events.entries()),
-      participantEvents: Array.from(memoryStore.participantEvents.entries()),
-      documents: Array.from(memoryStore.documents.entries()),
-      qrPasses: Array.from(memoryStore.qrPasses.entries()),
-      gates: Array.from(memoryStore.gates.entries()),
-      accessLogs: memoryStore.accessLogs,
-      auditLogs: memoryStore.auditLogs,
-      sentEmails: memoryStore.sentEmails,
-      emailConfig: memoryStore.emailConfig,
-    };
-    fs.writeFileSync(STORE_FILE_PATH, JSON.stringify(serialized), "utf-8");
-  } catch (err) {
-    console.warn("Could not persist store to disk:", err);
+function serializeStore() {
+  return {
+    registrationCounter: memoryStore.registrationCounter,
+    users: Array.from(memoryStore.users.entries()),
+    invitations: Array.from(memoryStore.invitations.entries()),
+    participants: Array.from(memoryStore.participants.entries()),
+    events: Array.from(memoryStore.events.entries()),
+    participantEvents: Array.from(memoryStore.participantEvents.entries()),
+    documents: Array.from(memoryStore.documents.entries()),
+    qrPasses: Array.from(memoryStore.qrPasses.entries()),
+    gates: Array.from(memoryStore.gates.entries()),
+    accessLogs: memoryStore.accessLogs,
+    auditLogs: memoryStore.auditLogs,
+    sentEmails: memoryStore.sentEmails,
+    emailConfig: memoryStore.emailConfig,
+  };
+}
+
+function mergeSerializedIntoMemory(data: any) {
+  if (!data) return;
+
+  if (typeof data.registrationCounter === "number") {
+    memoryStore.registrationCounter = Math.max(
+      memoryStore.registrationCounter,
+      data.registrationCounter
+    );
+  }
+
+  for (const [k, v] of (data.users || []) as [string, User][]) {
+    memoryStore.users.set(k, v);
+  }
+  for (const [k, v] of (data.invitations || []) as [string, Invitation][]) {
+    memoryStore.invitations.set(k, v);
+  }
+  for (const [k, v] of (data.participants || []) as [string, Participant][]) {
+    const existing = memoryStore.participants.get(k);
+    if (
+      !existing ||
+      new Date(v.updated_at || 0).getTime() >= new Date(existing.updated_at || 0).getTime()
+    ) {
+      memoryStore.participants.set(k, v);
+    }
+  }
+  for (const [k, v] of (data.events || []) as [string, Event][]) {
+    memoryStore.events.set(k, v);
+  }
+  for (const [k, v] of (data.participantEvents || []) as [string, ParticipantEvent][]) {
+    memoryStore.participantEvents.set(k, v);
+  }
+  for (const [k, v] of (data.documents || []) as [string, Document][]) {
+    memoryStore.documents.set(k, v);
+  }
+  for (const [k, v] of (data.qrPasses || []) as [string, QrPass][]) {
+    memoryStore.qrPasses.set(k, v);
+  }
+  for (const [k, v] of (data.gates || []) as [string, Gate][]) {
+    memoryStore.gates.set(k, v);
+  }
+
+  if (Array.isArray(data.accessLogs)) {
+    const logMap = new Map<string, AccessLog>();
+    for (const l of memoryStore.accessLogs) logMap.set(l.id, l);
+    for (const l of data.accessLogs) logMap.set(l.id, l);
+    memoryStore.accessLogs = Array.from(logMap.values()).sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+  }
+
+  if (Array.isArray(data.auditLogs)) {
+    const auditMap = new Map<string, AuditLog>();
+    for (const l of memoryStore.auditLogs) auditMap.set(l.id, l);
+    for (const l of data.auditLogs) auditMap.set(l.id, l);
+    memoryStore.auditLogs = Array.from(auditMap.values()).sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  }
+
+  if (Array.isArray(data.sentEmails)) {
+    const emailMap = new Map<string, SentEmailRecord>();
+    for (const e of memoryStore.sentEmails) emailMap.set(e.id, e);
+    for (const e of data.sentEmails) emailMap.set(e.id, e);
+    memoryStore.sentEmails = Array.from(emailMap.values()).sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+  }
+
+  if (data.emailConfig && (data.emailConfig.smtpPass || data.emailConfig.resendApiKey)) {
+    memoryStore.emailConfig = data.emailConfig;
   }
 }
 
-export function loadStoreFromDisk(): boolean {
-  try {
-    if (!fs.existsSync(STORE_FILE_PATH)) return false;
-    const raw = fs.readFileSync(STORE_FILE_PATH, "utf-8");
-    const data = JSON.parse(raw);
-    if (!data || !data.gates || data.gates.length === 0) return false;
+export async function saveStoreToDisk(): Promise<void> {
+  const serialized = serializeStore();
+  const jsonStr = JSON.stringify(serialized);
 
-    memoryStore.registrationCounter = data.registrationCounter || 421;
-    memoryStore.users = new Map(data.users || []);
-    memoryStore.invitations = new Map(data.invitations || []);
-    memoryStore.participants = new Map(data.participants || []);
-    memoryStore.events = new Map(data.events || []);
-    memoryStore.participantEvents = new Map(data.participantEvents || []);
-    memoryStore.documents = new Map(data.documents || []);
-    memoryStore.qrPasses = new Map(data.qrPasses || []);
-    memoryStore.gates = new Map(data.gates || []);
-    memoryStore.accessLogs = data.accessLogs || [];
-    memoryStore.auditLogs = data.auditLogs || [];
-    memoryStore.sentEmails = data.sentEmails || [];
-    if (data.emailConfig) {
-      memoryStore.emailConfig = data.emailConfig;
-    }
-    return true;
+  // 1. Write to local disk (/tmp)
+  try {
+    fs.writeFileSync(STORE_FILE_PATH, jsonStr, "utf-8");
   } catch (err) {
-    console.warn("Could not load store from disk:", err);
-    return false;
+    console.warn("Could not persist store to local disk:", err);
   }
+
+  // 2. Sync to shared serverless cloud store (bytebin + ntfy pointer)
+  try {
+    const postRes = await fetch("https://bytebin.lucko.me/post", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: jsonStr,
+      cache: "no-store",
+    });
+
+    if (postRes.ok) {
+      const { key } = await postRes.json();
+      if (key) {
+        appliedBlobKeys.add(key);
+        await fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}`, {
+          method: "POST",
+          body: JSON.stringify({ blobKey: key, ts: Date.now() }),
+          cache: "no-store",
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Cloud store sync warning:", err);
+  }
+}
+
+export async function loadStoreFromDisk(): Promise<boolean> {
+  let loaded = false;
+
+  // 1. Load from local /tmp if present
+  try {
+    if (fs.existsSync(STORE_FILE_PATH)) {
+      const raw = fs.readFileSync(STORE_FILE_PATH, "utf-8");
+      const data = JSON.parse(raw);
+      if (data && data.gates && data.gates.length > 0) {
+        mergeSerializedIntoMemory(data);
+        loaded = true;
+      }
+    }
+  } catch (err) {
+    console.warn("Local disk load warning:", err);
+  }
+
+  // 2. Pull latest snapshots from shared serverless cloud store
+  try {
+    const res = await fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}/json?poll=1&since=all`, {
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const text = (await res.text()).trim();
+      if (text) {
+        const lines = text.split("\n");
+        const recentKeys: string[] = [];
+        for (const line of lines.slice(-5)) {
+          try {
+            const evt = JSON.parse(line);
+            if (evt.event === "message" && evt.message) {
+              const msg = JSON.parse(evt.message);
+              if (msg.blobKey && !recentKeys.includes(msg.blobKey)) {
+                recentKeys.push(msg.blobKey);
+              }
+            }
+          } catch {}
+        }
+
+        for (const key of recentKeys.slice(-2)) {
+          if (!appliedBlobKeys.has(key)) {
+            const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, {
+              cache: "no-store",
+            });
+            if (blobRes.ok) {
+              const cloudData = await blobRes.json();
+              mergeSerializedIntoMemory(cloudData);
+              appliedBlobKeys.add(key);
+              loaded = true;
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Cloud store pull warning:", err);
+  }
+
+  return loaded;
 }
 
 export function getNextRegistrationId(): string {
-  loadStoreFromDisk();
-  memoryStore.registrationCounter += 1;
-  const regId = `KLT26-${String(memoryStore.registrationCounter).padStart(6, "0")}`;
-  saveStoreToDisk();
-  return regId;
+  const base = Math.max(memoryStore.registrationCounter, 420 + memoryStore.participants.size);
+  memoryStore.registrationCounter = base + 1;
+  return `KLT26-${String(memoryStore.registrationCounter).padStart(6, "0")}`;
 }
 
 export function initializeSeedData() {
-  if (loadStoreFromDisk()) {
-    return;
-  }
   if (memoryStore.gates.size > 0) return;
 
   // Campus Gates
@@ -168,55 +306,6 @@ export function initializeSeedData() {
     { id: "gate-back", name: "BACK GATE", location: "East Service Road & Logistics", status: "ACTIVE", created_at: new Date().toISOString() },
   ];
   defaultGates.forEach((g) => memoryStore.gates.set(g.id, g));
-
-  // Kaltarang 2026 Events
-  const defaultEvents: Event[] = [
-    {
-      id: "evt-rocktaves",
-      name: "Battle of the Bands (Rocktaves)",
-      description: "Flagship western & fusion rock band competition featuring top colleges across India.",
-      date: "2026-10-14",
-      start_time: "18:00",
-      end_time: "22:00",
-      venue: "Main Arena (OAT)",
-      status: "ACTIVE",
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "evt-stepup",
-      name: "Step Up (Western Group Dance)",
-      description: "Inter-college group dance competition celebrating street, hip-hop, and contemporary dance.",
-      date: "2026-10-15",
-      start_time: "14:00",
-      end_time: "18:00",
-      venue: "Auditorium Hall A",
-      status: "ACTIVE",
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "evt-digitalart",
-      name: "Digital Arts & Generative Design Showcase",
-      description: "Interactive digital media, generative graphics, and algorithmic creative workshop.",
-      date: "2026-10-15",
-      start_time: "10:30",
-      end_time: "13:30",
-      venue: "Academic Block 2 - Studio 3",
-      status: "ACTIVE",
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "evt-pronite",
-      name: "Pronite: Modern Folk & Electronic Fusion",
-      description: "Headlining musical festival night with celebrated artists and live production.",
-      date: "2026-10-16",
-      start_time: "19:30",
-      end_time: "23:30",
-      venue: "Main Ground Arena",
-      status: "ACTIVE",
-      created_at: new Date().toISOString(),
-    },
-  ];
-  defaultEvents.forEach((e) => memoryStore.events.set(e.id, e));
 
   // Super Admin User (24mc3008@rgipt.ac.in)
   const superAdminUser: User = {
@@ -232,29 +321,15 @@ export function initializeSeedData() {
   };
   memoryStore.users.set(superAdminUser.id, superAdminUser);
 
-  // Default Fest Admin User
-  const adminUser: User = {
-    id: "usr-admin-1",
-    auth_user_id: "auth-admin-1",
-    email: "admin@kaltarang.in",
-    mobile: "+919876543210",
-    role: "FEST_ADMIN",
-    status: "ACTIVE",
-    full_name: "Kaltarang Admin Team",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  memoryStore.users.set(adminUser.id, adminUser);
-
   // Default Security Operator
   const secUser: User = {
     id: "usr-sec-1",
     auth_user_id: "auth-sec-1",
-    email: "security@kaltarang.in",
+    email: "security@rgipt.ac.in",
     mobile: "+919876543211",
     role: "SECURITY_OPERATOR",
     status: "ACTIVE",
-    full_name: "Operator 04 (Main Gate)",
+    full_name: "Security Guard (RGIPT Gate)",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -270,20 +345,20 @@ export function initializeSeedData() {
   const p1: Participant = {
     id: p1Id,
     user_id: "usr-part-1",
-    invitation_id: "inv-demo-1",
+    invitation_id: null,
     registration_id: p1RegId,
     full_name: "Arjun Mehta",
     email: "arjun.mehta@example.com",
     mobile: "+919876500001",
     college: "NIT Bhopal",
-    course: "B.Tech Computer Science",
-    year_of_study: "3rd Year",
-    address: "Room 304, Hostel 7, MANIT Campus",
-    city: "Bhopal",
-    state: "Madhya Pradesh",
-    pincode: "462003",
+    course: "",
+    year_of_study: "",
+    address: "",
+    city: "",
+    state: "",
+    pincode: "",
     selfie_path: "/assets/participant-avatar.jpg",
-    payment_reference: "UTR-9028471204",
+    payment_reference: "N/A",
     qr_token: p1Token,
     status: "APPROVED",
     campus_status: "OUTSIDE",
@@ -307,65 +382,6 @@ export function initializeSeedData() {
     revoked_by: null,
   };
   memoryStore.qrPasses.set(p1Hash, qrPass);
-
-  // Demo Participant 2 (Under Review)
-  const p2: Participant = {
-    id: "part-2",
-    user_id: "usr-part-2",
-    invitation_id: "inv-demo-2",
-    registration_id: null,
-    full_name: "Kavya Singh",
-    email: "kavya.singh@example.com",
-    mobile: "+919876500002",
-    college: "IIT Patna",
-    course: "B.Tech Electrical Engineering",
-    year_of_study: "2nd Year",
-    address: "Wing B, Girls Hostel, IIT Patna",
-    city: "Patna",
-    state: "Bihar",
-    pincode: "801106",
-    selfie_path: "/assets/participant-avatar.jpg",
-    payment_reference: "UTR-8839201945",
-    status: "UNDER_REVIEW",
-    campus_status: "OUTSIDE",
-    correction_reason: null,
-    rejection_reason: null,
-    created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-    submitted_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-    approved_at: null,
-    approved_by: null,
-  };
-  memoryStore.participants.set(p2.id, p2);
-
-  // Demo Access Logs
-  memoryStore.accessLogs.push(
-    {
-      id: "log-1",
-      participant_id: p1.id,
-      registration_id: p1RegId,
-      gate_id: "gate-main",
-      operator_id: "usr-sec-1",
-      action: "ENTRY",
-      result: "ALLOWED",
-      notes: "Gate check visual match",
-      timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-    },
-    {
-      id: "log-2",
-      participant_id: p1.id,
-      registration_id: p1RegId,
-      gate_id: "gate-arena",
-      operator_id: "usr-sec-1",
-      action: "EXIT",
-      result: "ALLOWED",
-      notes: "Normal exit",
-      timestamp: new Date(Date.now() - 3600000 * 1).toISOString(),
-    }
-  );
-
-  saveStoreToDisk();
 }
 
-// Auto-seed on load
 initializeSeedData();

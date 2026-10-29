@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  loadStoreFromDisk();
+  await loadStoreFromDisk();
   return NextResponse.json({
     emails: [...memoryStore.sentEmails].reverse(),
     config: {
@@ -19,7 +21,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const body = await request.json();
     const { smtpHost, smtpPort, smtpUser, smtpPass, resendApiKey, fromEmail } = body;
 
@@ -42,7 +44,7 @@ export async function POST(request: Request) {
       memoryStore.emailConfig.provider = "console";
     }
 
-    saveStoreToDisk();
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

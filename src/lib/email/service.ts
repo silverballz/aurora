@@ -40,7 +40,7 @@ export async function sendEmail(
   deliveredVia?: string;
   error?: string;
 }> {
-  loadStoreFromDisk();
+  await loadStoreFromDisk();
 
   const cfg = memoryStore.emailConfig;
   const resendKey = cfg?.resendApiKey || process.env.RESEND_API_KEY || "";
@@ -149,7 +149,6 @@ export async function sendEmail(
     timestamp: new Date().toISOString(),
     deliveredVia,
   });
-  saveStoreToDisk();
 
   return {
     success: true,

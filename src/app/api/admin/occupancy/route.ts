@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  loadStoreFromDisk();
+  await loadStoreFromDisk();
   const participants = Array.from(memoryStore.participants.values());
   const approved = participants.filter((p) => p.status === "APPROVED");
 

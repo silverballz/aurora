@@ -5,7 +5,7 @@ import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const body = await request.json();
 
     const {
@@ -108,8 +108,6 @@ export async function POST(request: Request) {
       });
     }
 
-    saveStoreToDisk();
-
     await logAuditEvent({
       action: "PUBLIC_REGISTRATION_SUBMITTED",
       entityType: "PARTICIPANT",
@@ -121,6 +119,8 @@ export async function POST(request: Request) {
         mobile: participant.mobile,
       },
     });
+
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

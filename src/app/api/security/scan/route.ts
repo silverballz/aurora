@@ -5,7 +5,7 @@ import { Participant } from "@/lib/types/database";
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const { token } = await request.json();
 
     if (!token || typeof token !== "string") {
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
         approved_by: "usr-super-admin-1",
       };
       memoryStore.participants.set(participant.id, participant);
-      saveStoreToDisk();
+      await saveStoreToDisk();
     }
 
     if (!participant) {

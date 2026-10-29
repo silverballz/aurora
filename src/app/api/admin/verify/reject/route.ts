@@ -5,7 +5,7 @@ import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const { participant_id, reason } = await request.json();
 
     if (!participant_id || !reason) {
@@ -28,7 +28,6 @@ export async function POST(request: Request) {
         qr.revoked_at = new Date().toISOString();
       }
     }
-    saveStoreToDisk();
 
     try {
       await sendRejectionEmail({
@@ -46,6 +45,7 @@ export async function POST(request: Request) {
       entityId: participant.id,
       metadata: { reason },
     });
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

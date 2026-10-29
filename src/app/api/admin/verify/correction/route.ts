@@ -5,7 +5,7 @@ import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const { participant_id, reason } = await request.json();
 
     if (!participant_id || !reason) {
@@ -20,7 +20,6 @@ export async function POST(request: Request) {
     participant.status = "CORRECTION";
     participant.correction_reason = reason.trim();
     participant.updated_at = new Date().toISOString();
-    saveStoreToDisk();
 
     // Send correction email to participant
     let emailSent = false;
@@ -44,6 +43,7 @@ export async function POST(request: Request) {
         emailSent,
       },
     });
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

@@ -7,7 +7,7 @@ const VALID_SUPERVISOR_PIN = "2026"; // Default supervisor operational PIN
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const { participant_id, action, reason, supervisor_pin, gate_id = "gate-main" } = await request.json();
 
     if (!participant_id || !action || !reason || !supervisor_pin) {
@@ -40,7 +40,6 @@ export async function POST(request: Request) {
       timestamp: new Date().toISOString(),
     };
     memoryStore.accessLogs.push(overrideLog);
-    saveStoreToDisk();
 
     await logAuditEvent({
       action: "ACCESS_OVERRIDE",
@@ -54,7 +53,7 @@ export async function POST(request: Request) {
         gate_id,
       },
     });
-    saveStoreToDisk();
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

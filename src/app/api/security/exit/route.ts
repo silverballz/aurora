@@ -4,7 +4,7 @@ import { AccessLog } from "@/lib/types/database";
 
 export async function POST(request: Request) {
   try {
-    loadStoreFromDisk();
+    await loadStoreFromDisk();
     const { participant_id, gate_id = "gate-main", operator_id = "usr-sec-1", notes } = await request.json();
 
     if (!participant_id) {
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         timestamp: new Date().toISOString(),
       };
       memoryStore.accessLogs.push(blockedLog);
-      saveStoreToDisk();
+      await saveStoreToDisk();
 
       return NextResponse.json({
         success: false,
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       timestamp: new Date().toISOString(),
     };
     memoryStore.accessLogs.push(allowedLog);
-    saveStoreToDisk();
+    await saveStoreToDisk();
 
     return NextResponse.json({
       success: true,

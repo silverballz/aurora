@@ -1,4 +1,4 @@
-import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
+import { memoryStore } from "@/lib/data/store";
 
 export async function logAuditEvent(params: {
   actorId?: string | null;
@@ -8,7 +8,6 @@ export async function logAuditEvent(params: {
   metadata?: Record<string, unknown>;
 }) {
   try {
-    loadStoreFromDisk();
     memoryStore.auditLogs.push({
       id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       actor_id: params.actorId || "usr-super-admin-1",
@@ -18,7 +17,6 @@ export async function logAuditEvent(params: {
       metadata: params.metadata || {},
       created_at: new Date().toISOString(),
     });
-    saveStoreToDisk();
   } catch (err) {
     console.error("Audit log error:", err);
   }
