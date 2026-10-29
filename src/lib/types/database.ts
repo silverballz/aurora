@@ -69,6 +69,11 @@ export interface Participant {
   state: string | null;
   pincode: string | null;
   selfie_path: string | null;
+  student_id_path?: string | null;
+  aadhaar_path?: string | null;
+  payment_reference?: string | null;
+  qr_token?: string | null;
+  qr_data_url?: string | null;
   status: ParticipantStatus;
   campus_status: CampusStatus;
   correction_reason: string | null;

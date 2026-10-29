@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { memoryStore, getNextRegistrationId } from "@/lib/data/store";
+import { memoryStore, getNextRegistrationId, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
 import { generateSecureToken, hashToken, signQrToken } from "@/lib/crypto/tokens";
 import { generateQrDataUrl } from "@/lib/qr/generator";
 import { sendApprovalEmail } from "@/lib/email/service";
@@ -7,7 +7,8 @@ import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
-    const { participant_id } = await request.json();
+    loadStoreFromDisk();
+    const { participant_id, resend } = await request.json();
 
     if (!participant_id) {
       return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
@@ -18,55 +19,46 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Participant not found" }, { status: 404 });
     }
 
-    // Idempotency: if already approved and has QR, return existing
-    if (participant.status === "APPROVED" && participant.registration_id) {
-      return NextResponse.json({
-        success: true,
-        participant,
-        message: "Participant is already approved.",
+    // 1. Keep ONE single static Registration ID & QR token for this participant across the entire fest
+    const registrationId = participant.registration_id || getNextRegistrationId();
+
+    let signedQrPayload = participant.qr_token;
+    let qrDataUrl = participant.qr_data_url;
+
+    if (!signedQrPayload || !qrDataUrl) {
+      const rawQrSecret = generateSecureToken(32);
+      signedQrPayload = signQrToken(rawQrSecret);
+      const tokenHash = hashToken(rawQrSecret);
+      qrDataUrl = await generateQrDataUrl(signedQrPayload);
+
+      // Register active static QR pass in store
+      const qrPassId = `qr-${participant.id}`;
+      memoryStore.qrPasses.set(tokenHash, {
+        id: qrPassId,
+        participant_id: participant.id,
+        token_hash: tokenHash,
+        status: "ACTIVE",
+        issued_at: new Date().toISOString(),
+        revoked_at: null,
+        revoked_by: null,
       });
     }
 
-    // 1. Generate sequential Registration ID (KLT26-XXXXXX)
-    const registrationId = participant.registration_id || getNextRegistrationId();
-
-    // 2. Generate high-entropy opaque QR secret and signed token
-    const rawQrSecret = generateSecureToken(32);
-    const signedQrPayload = signQrToken(rawQrSecret);
-    const tokenHash = hashToken(rawQrSecret);
-
-    // 3. Generate QR code image
-    const qrDataUrl = await generateQrDataUrl(signedQrPayload);
-
-    // Revoke any previous QR passes for this participant
-    for (const [hash, qr] of memoryStore.qrPasses.entries()) {
-      if (qr.participant_id === participant.id && qr.status === "ACTIVE") {
-        qr.status = "REVOKED";
-        qr.revoked_at = new Date().toISOString();
-      }
-    }
-
-    // Create new QR Pass
-    const qrPassId = `qr-${Date.now()}`;
-    memoryStore.qrPasses.set(tokenHash, {
-      id: qrPassId,
-      participant_id: participant.id,
-      token_hash: tokenHash,
-      status: "ACTIVE",
-      issued_at: new Date().toISOString(),
-      revoked_at: null,
-      revoked_by: null,
-    });
-
-    // 4. Update Participant to APPROVED
+    // 2. Update Participant to APPROVED with their single static QR
     participant.status = "APPROVED";
     participant.registration_id = registrationId;
-    participant.approved_at = new Date().toISOString();
-    participant.approved_by = "usr-admin-1";
+    participant.qr_token = signedQrPayload;
+    participant.qr_data_url = qrDataUrl;
+    participant.approved_at = participant.approved_at || new Date().toISOString();
+    participant.approved_by = "usr-super-admin-1";
     participant.updated_at = new Date().toISOString();
 
-    // 5. Send Confirmation Email (Failure to deliver does NOT fail approval)
+    memoryStore.participants.set(participant.id, participant);
+    saveStoreToDisk();
+
+    // 3. Send Email with the Single Static QR Pass
     let emailSent = false;
+    let deliveredVia = "outbox";
     try {
       const emailResult = await sendApprovalEmail({
         to: participant.email,
@@ -78,29 +70,36 @@ export async function POST(request: Request) {
         qrDataUrl,
       });
       emailSent = emailResult.success;
+      deliveredVia = emailResult.deliveredVia || "outbox";
     } catch (emailErr) {
       console.warn("Approval confirmation email delivery failed:", emailErr);
     }
 
-    // 6. Log Approval Audit Event
+    // 4. Log Approval Audit Event
     await logAuditEvent({
-      action: "PROFILE_APPROVED",
+      action: resend ? "QR_PASS_RESENT" : "PROFILE_APPROVED",
       entityType: "PARTICIPANT",
       entityId: participant.id,
       metadata: {
         registration_id: registrationId,
         email: participant.email,
         emailDelivered: emailSent,
+        deliveredVia,
       },
     });
+    saveStoreToDisk();
 
     return NextResponse.json({
       success: true,
       participant,
       registration_id: registrationId,
       qrDataUrl,
+      qrToken: signedQrPayload,
       emailSent,
-      message: "Participant approved successfully. QR access credential issued.",
+      deliveredVia,
+      message: resend
+        ? `Single static QR pass resent to ${participant.email}`
+        : `Participant approved! Single static QR pass (${registrationId}) generated and emailed to ${participant.email}.`,
     });
   } catch (error) {
     console.error("Approval error:", error);

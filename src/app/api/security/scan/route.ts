@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { memoryStore } from "@/lib/data/store";
+import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
 import { verifyAndExtractQrToken, hashToken } from "@/lib/crypto/tokens";
+import { Participant } from "@/lib/types/database";
 
 export async function POST(request: Request) {
   try {
-    const { token, gate_id } = await request.json();
+    loadStoreFromDisk();
+    const { token } = await request.json();
 
     if (!token || typeof token !== "string") {
       return NextResponse.json(
@@ -13,10 +15,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Verify signature or check raw token
-    let rawToken = token.trim();
-    if (token.includes(".")) {
-      const { valid, rawToken: extracted } = verifyAndExtractQrToken(token.trim());
+    const trimmed = token.trim();
+    let rawToken = trimmed;
+    if (trimmed.includes(".")) {
+      const { valid, rawToken: extracted } = verifyAndExtractQrToken(trimmed);
       if (valid) {
         rawToken = extracted;
       }
@@ -24,37 +26,40 @@ export async function POST(request: Request) {
 
     const tokenHash = hashToken(rawToken);
 
-    // 2. Look up QR Pass in store
-    let qrPass = memoryStore.qrPasses.get(tokenHash);
-    if (!qrPass) {
-      // Also check if raw token itself matches any direct token
-      for (const qr of memoryStore.qrPasses.values()) {
-        if (qr.token_hash === rawToken || qr.token_hash === tokenHash) {
-          qrPass = qr;
+    // 1. Look up Participant by QR pass, qr_token, registration_id, or email
+    let participant: Participant | undefined;
+
+    const qrPass = memoryStore.qrPasses.get(tokenHash);
+    if (qrPass) {
+      if (qrPass.status === "REVOKED") {
+        return NextResponse.json(
+          { valid: false, error_code: "QR_REVOKED", message: "✕ QR PASS REVOKED. Please contact administration." },
+          { status: 403 }
+        );
+      }
+      participant = memoryStore.participants.get(qrPass.participant_id);
+    }
+
+    if (!participant) {
+      const upper = trimmed.toUpperCase();
+      const lower = trimmed.toLowerCase();
+      for (const p of memoryStore.participants.values()) {
+        if (
+          p.qr_token === trimmed ||
+          p.qr_token === rawToken ||
+          (p.registration_id && p.registration_id.toUpperCase() === upper) ||
+          p.email.toLowerCase() === lower ||
+          p.id === trimmed
+        ) {
+          participant = p;
           break;
         }
       }
     }
 
-    if (!qrPass) {
-      return NextResponse.json(
-        { valid: false, error_code: "INVALID_QR", message: "✕ INVALID QR PASS. Unrecognized credential." },
-        { status: 404 }
-      );
-    }
-
-    if (qrPass.status === "REVOKED") {
-      return NextResponse.json(
-        { valid: false, error_code: "QR_REVOKED", message: "✕ QR PASS REVOKED. Please contact administration." },
-        { status: 403 }
-      );
-    }
-
-    // 3. Look up Participant
-    const participant = memoryStore.participants.get(qrPass.participant_id);
     if (!participant) {
       return NextResponse.json(
-        { valid: false, error_code: "PARTICIPANT_NOT_FOUND", message: "Participant record not found." },
+        { valid: false, error_code: "INVALID_QR", message: "✕ INVALID QR PASS. Unrecognized credential." },
         { status: 404 }
       );
     }
@@ -68,7 +73,7 @@ export async function POST(request: Request) {
 
     if (participant.status !== "APPROVED") {
       return NextResponse.json(
-        { valid: false, error_code: "NOT_APPROVED", message: "⚠ REGISTRATION NOT VERIFIED. Participant pending approval." },
+        { valid: false, error_code: "NOT_APPROVED", message: "⚠ REGISTRATION NOT VERIFIED. Participant pending admin approval." },
         { status: 400 }
       );
     }
@@ -82,7 +87,6 @@ export async function POST(request: Request) {
       .filter((al) => al.participant_id === participant.id && al.action === "ENTRY" && al.result === "ALLOWED")
       .pop();
 
-    // Data minimization: Return only what security needs
     return NextResponse.json({
       valid: true,
       participant: {

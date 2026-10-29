@@ -1,3 +1,4 @@
+import fs from "fs";
 import {
   User,
   Invitation,
@@ -10,40 +11,153 @@ import {
   AccessLog,
   AuditLog,
 } from "@/lib/types/database";
-import { hashToken, generateSecureToken, signQrToken } from "@/lib/crypto/tokens";
-import { generateQrDataUrl } from "@/lib/qr/generator";
+import { hashToken } from "@/lib/crypto/tokens";
 
-/**
- * Aurora In-Memory Database Store
- * Implements real business rules, sequence generation (KLT26-XXXXXX),
- * atomic entry/exit state machine, duplicate checks, and audit logging.
- */
+const STORE_FILE_PATH = "/tmp/aurora-kaltarang-2026-store.json";
 
-// Sequence counter
-let registrationCounter = 420;
-
-export function getNextRegistrationId(): string {
-  registrationCounter += 1;
-  return `KLT26-${String(registrationCounter).padStart(6, "0")}`;
+export interface SentEmailRecord {
+  id: string;
+  to: string;
+  subject: string;
+  html: string;
+  registrationId?: string;
+  qrDataUrl?: string;
+  participantName?: string;
+  timestamp: string;
+  deliveredVia: string;
 }
 
-// Global state collections
-export const memoryStore = {
-  users: new Map<string, User>(),
-  invitations: new Map<string, Invitation>(),
-  participants: new Map<string, Participant>(),
-  events: new Map<string, Event>(),
-  participantEvents: new Map<string, ParticipantEvent>(),
-  documents: new Map<string, Document>(),
-  qrPasses: new Map<string, QrPass>(),
-  gates: new Map<string, Gate>(),
-  accessLogs: [] as AccessLog[],
-  auditLogs: [] as AuditLog[],
-  otpCodes: new Map<string, { code: string; expiresAt: number; attempts: number }>(),
+export interface RuntimeEmailConfig {
+  provider: "console" | "smtp" | "resend";
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpPass?: string;
+  resendApiKey?: string;
+  fromEmail?: string;
+}
+
+export interface AuroraStore {
+  registrationCounter: number;
+  users: Map<string, User>;
+  invitations: Map<string, Invitation>;
+  participants: Map<string, Participant>;
+  events: Map<string, Event>;
+  participantEvents: Map<string, ParticipantEvent>;
+  documents: Map<string, Document>;
+  qrPasses: Map<string, QrPass>;
+  gates: Map<string, Gate>;
+  accessLogs: AccessLog[];
+  auditLogs: AuditLog[];
+  otpCodes: Map<string, { code: string; expiresAt: number; attempts: number }>;
+  sentEmails: SentEmailRecord[];
+  emailConfig: RuntimeEmailConfig;
+}
+
+const globalForAurora = globalThis as unknown as {
+  __AURORA_STORE__?: AuroraStore;
 };
 
-// Initialize default events and campus gates
+function createEmptyStore(): AuroraStore {
+  return {
+    registrationCounter: 420,
+    users: new Map<string, User>(),
+    invitations: new Map<string, Invitation>(),
+    participants: new Map<string, Participant>(),
+    events: new Map<string, Event>(),
+    participantEvents: new Map<string, ParticipantEvent>(),
+    documents: new Map<string, Document>(),
+    qrPasses: new Map<string, QrPass>(),
+    gates: new Map<string, Gate>(),
+    accessLogs: [],
+    auditLogs: [],
+    otpCodes: new Map(),
+    sentEmails: [],
+    emailConfig: {
+      provider: process.env.RESEND_API_KEY
+        ? "resend"
+        : process.env.SMTP_USER
+        ? "smtp"
+        : "console",
+      smtpHost: process.env.SMTP_HOST || "smtp.gmail.com",
+      smtpPort: parseInt(process.env.SMTP_PORT || "465", 10),
+      smtpUser: process.env.SMTP_USER || "",
+      smtpPass: process.env.SMTP_PASSWORD || "",
+      resendApiKey: process.env.RESEND_API_KEY || "",
+      fromEmail: process.env.EMAIL_FROM || "Kaltarang 2026 <no-reply@kaltarang.in>",
+    },
+  };
+}
+
+export const memoryStore: AuroraStore =
+  globalForAurora.__AURORA_STORE__ || createEmptyStore();
+
+globalForAurora.__AURORA_STORE__ = memoryStore;
+
+export function saveStoreToDisk() {
+  try {
+    const serialized = {
+      registrationCounter: memoryStore.registrationCounter,
+      users: Array.from(memoryStore.users.entries()),
+      invitations: Array.from(memoryStore.invitations.entries()),
+      participants: Array.from(memoryStore.participants.entries()),
+      events: Array.from(memoryStore.events.entries()),
+      participantEvents: Array.from(memoryStore.participantEvents.entries()),
+      documents: Array.from(memoryStore.documents.entries()),
+      qrPasses: Array.from(memoryStore.qrPasses.entries()),
+      gates: Array.from(memoryStore.gates.entries()),
+      accessLogs: memoryStore.accessLogs,
+      auditLogs: memoryStore.auditLogs,
+      sentEmails: memoryStore.sentEmails,
+      emailConfig: memoryStore.emailConfig,
+    };
+    fs.writeFileSync(STORE_FILE_PATH, JSON.stringify(serialized), "utf-8");
+  } catch (err) {
+    console.warn("Could not persist store to disk:", err);
+  }
+}
+
+export function loadStoreFromDisk(): boolean {
+  try {
+    if (!fs.existsSync(STORE_FILE_PATH)) return false;
+    const raw = fs.readFileSync(STORE_FILE_PATH, "utf-8");
+    const data = JSON.parse(raw);
+    if (!data || !data.gates || data.gates.length === 0) return false;
+
+    memoryStore.registrationCounter = data.registrationCounter || 421;
+    memoryStore.users = new Map(data.users || []);
+    memoryStore.invitations = new Map(data.invitations || []);
+    memoryStore.participants = new Map(data.participants || []);
+    memoryStore.events = new Map(data.events || []);
+    memoryStore.participantEvents = new Map(data.participantEvents || []);
+    memoryStore.documents = new Map(data.documents || []);
+    memoryStore.qrPasses = new Map(data.qrPasses || []);
+    memoryStore.gates = new Map(data.gates || []);
+    memoryStore.accessLogs = data.accessLogs || [];
+    memoryStore.auditLogs = data.auditLogs || [];
+    memoryStore.sentEmails = data.sentEmails || [];
+    if (data.emailConfig) {
+      memoryStore.emailConfig = data.emailConfig;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Could not load store from disk:", err);
+    return false;
+  }
+}
+
+export function getNextRegistrationId(): string {
+  loadStoreFromDisk();
+  memoryStore.registrationCounter += 1;
+  const regId = `KLT26-${String(memoryStore.registrationCounter).padStart(6, "0")}`;
+  saveStoreToDisk();
+  return regId;
+}
+
 export function initializeSeedData() {
+  if (loadStoreFromDisk()) {
+    return;
+  }
   if (memoryStore.gates.size > 0) return;
 
   // Campus Gates
@@ -146,11 +260,12 @@ export function initializeSeedData() {
   };
   memoryStore.users.set(secUser.id, secUser);
 
-  // Demo Participant 1 (Approved with active QR pass)
+  // Demo Participant 1 (Approved with active single static QR pass)
   const p1Token = "demo-approved-qr-token-secret-123456";
   const p1Hash = hashToken(p1Token);
   const p1RegId = "KLT26-000421";
   const p1Id = "part-1";
+  memoryStore.registrationCounter = 421;
 
   const p1: Participant = {
     id: p1Id,
@@ -168,6 +283,8 @@ export function initializeSeedData() {
     state: "Madhya Pradesh",
     pincode: "462003",
     selfie_path: "/assets/participant-avatar.jpg",
+    payment_reference: "UTR-9028471204",
+    qr_token: p1Token,
     status: "APPROVED",
     campus_status: "OUTSIDE",
     correction_reason: null,
@@ -176,7 +293,7 @@ export function initializeSeedData() {
     updated_at: new Date(Date.now() - 86400000).toISOString(),
     submitted_at: new Date(Date.now() - 86400000 * 2).toISOString(),
     approved_at: new Date(Date.now() - 86400000).toISOString(),
-    approved_by: "usr-admin-1",
+    approved_by: "usr-super-admin-1",
   };
   memoryStore.participants.set(p1.id, p1);
 
@@ -208,6 +325,7 @@ export function initializeSeedData() {
     state: "Bihar",
     pincode: "801106",
     selfie_path: "/assets/participant-avatar.jpg",
+    payment_reference: "UTR-8839201945",
     status: "UNDER_REVIEW",
     campus_status: "OUTSIDE",
     correction_reason: null,
@@ -219,65 +337,6 @@ export function initializeSeedData() {
     approved_by: null,
   };
   memoryStore.participants.set(p2.id, p2);
-
-  // Link documents for p2
-  const doc1: Document = {
-    id: "doc-student-2",
-    participant_id: p2.id,
-    document_type: "STUDENT_ID",
-    storage_path: "participants/part-2/student-id/id_card.pdf",
-    original_filename: "iit_patna_student_card.pdf",
-    mime_type: "application/pdf",
-    file_size: 1420500,
-    status: "PENDING",
-    uploaded_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-    verified_at: null,
-    verified_by: null,
-  };
-  const doc2: Document = {
-    id: "doc-aadhaar-2",
-    participant_id: p2.id,
-    document_type: "AADHAAR",
-    storage_path: "participants/part-2/aadhaar/aadhaar.pdf",
-    original_filename: "aadhaar_card.pdf",
-    mime_type: "application/pdf",
-    file_size: 2120000,
-    status: "PENDING",
-    uploaded_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-    verified_at: null,
-    verified_by: null,
-  };
-  memoryStore.documents.set(doc1.id, doc1);
-  memoryStore.documents.set(doc2.id, doc2);
-
-  // Demo Participant 3 (Correction Required)
-  const p3: Participant = {
-    id: "part-3",
-    user_id: "usr-part-3",
-    invitation_id: "inv-demo-3",
-    registration_id: null,
-    full_name: "Rohan Verma",
-    email: "rohan.verma@example.com",
-    mobile: "+919876500003",
-    college: "BHU Varanasi",
-    course: "M.Sc Physics",
-    year_of_study: "1st Year",
-    address: "Broacha Hostel, BHU Campus",
-    city: "Varanasi",
-    state: "Uttar Pradesh",
-    pincode: "221005",
-    selfie_path: null,
-    status: "CORRECTION",
-    campus_status: "OUTSIDE",
-    correction_reason: "Student ID image is blurry and college roll number cannot be read. Please upload a clear photo.",
-    rejection_reason: null,
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 8).toISOString(),
-    submitted_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    approved_at: null,
-    approved_by: null,
-  };
-  memoryStore.participants.set(p3.id, p3);
 
   // Demo Access Logs
   memoryStore.accessLogs.push(
@@ -304,6 +363,8 @@ export function initializeSeedData() {
       timestamp: new Date(Date.now() - 3600000 * 1).toISOString(),
     }
   );
+
+  saveStoreToDisk();
 }
 
 // Auto-seed on load

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { memoryStore } from "@/lib/data/store";
+import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
 
 export async function GET() {
+  loadStoreFromDisk();
   const participants = Array.from(memoryStore.participants.values());
   const approved = participants.filter((p) => p.status === "APPROVED");
 

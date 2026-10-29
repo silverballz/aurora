@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { memoryStore } from "@/lib/data/store";
+import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
 
 export async function GET(request: Request) {
+  loadStoreFromDisk();
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") || "50", 10);
 

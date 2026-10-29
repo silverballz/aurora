@@ -4,21 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
-  ArrowDownLeft,
-  ArrowUpRight,
   Camera,
-  Check,
   CheckCircle2,
   KeyRound,
   LogIn,
   LogOut,
   QrCode,
-  RefreshCw,
-  Shield,
   ShieldAlert,
-  UserCheck,
+  Upload,
   X,
-  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +20,7 @@ import { toast } from "sonner";
 
 export default function SecurityGatePage() {
   const [selectedGate, setSelectedGate] = useState("gate-main");
-  const [operatorCode] = useState("SEC-014 (Operator 04)");
+  const [operatorCode] = useState("SEC-014 (Gate Operator)");
   const [occupancy, setOccupancy] = useState<any>(null);
 
   // Scanner State
@@ -45,8 +39,7 @@ export default function SecurityGatePage() {
   const [overridePin, setOverridePin] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const html5QrCodeRef = useRef<any>(null);
 
   const fetchStats = async () => {
     try {
@@ -61,43 +54,81 @@ export default function SecurityGatePage() {
   useEffect(() => {
     fetchStats();
     const interval = setInterval(fetchStats, 6000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      stopCamera();
+    };
   }, []);
 
-  // WebRTC Camera for QR Scanner
+  // Real Live QR Scanner using html5-qrcode
   const startCamera = async () => {
     try {
       setScanError(null);
       setScannedResult(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
       setScanning(true);
+
+      const { Html5Qrcode } = await import("html5-qrcode");
+      setTimeout(async () => {
+        try {
+          const scanner = new Html5Qrcode("aurora-qr-reader");
+          html5QrCodeRef.current = scanner;
+          await scanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 240, height: 240 } },
+            (decodedText: string) => {
+              evaluateToken(decodedText);
+            },
+            () => {}
+          );
+        } catch (err) {
+          console.warn("Camera init warning:", err);
+          toast.error("Camera unavailable or permission denied. You can upload a QR image or enter Registration ID below.");
+          setScanning(false);
+        }
+      }, 150);
     } catch {
-      toast.error("Camera access failed. You can use manual QR pass validation below.");
+      toast.error("Failed to initialize scanner.");
+      setScanning(false);
     }
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+  const stopCamera = async () => {
+    try {
+      if (html5QrCodeRef.current) {
+        const scanner = html5QrCodeRef.current;
+        html5QrCodeRef.current = null;
+        if (scanner.isScanning) {
+          await scanner.stop();
+        }
+        scanner.clear();
+      }
+    } catch {
+      // ignore cleanup errors
     }
     setScanning(false);
   };
 
-  // Evaluate scanned QR token
+  const handleScanImageFile = async (file: File) => {
+    try {
+      setEvaluating(true);
+      const { Html5Qrcode } = await import("html5-qrcode");
+      const tempScanner = new Html5Qrcode("aurora-qr-file-reader");
+      const decodedText = await tempScanner.scanFile(file, false);
+      tempScanner.clear();
+      await evaluateToken(decodedText);
+    } catch {
+      toast.error("Could not read a valid QR code from that image.");
+      setEvaluating(false);
+    }
+  };
+
+  // Evaluate scanned QR token or Registration ID
   const evaluateToken = async (tokenString: string) => {
     if (!tokenString) return;
     try {
       setEvaluating(true);
       setScanError(null);
-      stopCamera();
+      await stopCamera();
 
       const res = await fetch("/api/security/scan", {
         method: "POST",
@@ -111,7 +142,7 @@ export default function SecurityGatePage() {
         setScannedResult(null);
       } else {
         setScannedResult(data);
-        toast.success(`Verified: ${data.participant.full_name}`);
+        toast.success(`Verified: ${data.participant.full_name} (${data.participant.registration_id})`);
       }
     } catch {
       setScanError("Network error validating pass. Please reconnect.");
@@ -241,6 +272,8 @@ export default function SecurityGatePage() {
 
   return (
     <div className="min-h-screen bg-security text-security-foreground flex flex-col">
+      <div id="aurora-qr-file-reader" className="hidden" />
+
       {/* High-Contrast Gate Header */}
       <header className="flex items-center justify-between border-b border-security-border px-5 py-4 sm:px-8 bg-security-panel">
         <div className="flex items-center gap-3">
@@ -268,7 +301,7 @@ export default function SecurityGatePage() {
             ● Online
           </span>
           <Button asChild size="sm" variant="ghost" className="text-security-muted hover:text-white text-xs">
-            <Link href="/admin">Staff Dashboard</Link>
+            <Link href="/admin/verification">Admin Console</Link>
           </Button>
         </div>
       </header>
@@ -283,69 +316,79 @@ export default function SecurityGatePage() {
               <p className="section-label text-security-muted">Gate Verification</p>
               <h2 className="mt-2 font-display text-4xl sm:text-5xl text-white">Scan. Identify. Verify.</h2>
               <p className="mt-2 text-xs text-security-muted">
-                Point the device camera at the participant's QR code pass.
+                Scan the participant&apos;s single static QR code from their email, upload a QR screenshot, or enter their Registration ID.
               </p>
 
               {/* Camera Frame */}
-              <div className="mt-6 aspect-[16/10] relative rounded-lg overflow-hidden border border-security-border bg-black flex items-center justify-center">
+              <div className="mt-6 min-h-[280px] relative rounded-lg overflow-hidden border border-security-border bg-black flex items-center justify-center">
                 {scanning ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="size-full object-cover"
-                  />
+                  <div id="aurora-qr-reader" className="w-full" />
                 ) : (
                   <div className="text-center p-6">
                     <QrCode className="size-20 text-security-muted mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-white">Camera Scanner Idle</p>
-                    <p className="text-xs text-security-muted mt-1">Tap below to activate camera scanner</p>
+                    <p className="text-sm font-semibold text-white">QR Camera Scanner Ready</p>
+                    <p className="text-xs text-security-muted mt-1">
+                      Tap Start QR Scanner to read QR passes from participant phones
+                    </p>
                   </div>
                 )}
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-5 space-y-3">
+              <div className="mt-5 grid sm:grid-cols-2 gap-3">
                 {scanning ? (
                   <Button
                     size="lg"
                     onClick={stopCamera}
                     variant="outline"
-                    className="w-full h-14 text-base font-semibold border-security-border text-white hover:bg-white/10"
+                    className="sm:col-span-2 w-full h-13 text-base font-semibold border-security-border text-white hover:bg-white/10"
                   >
                     Stop Camera
                   </Button>
                 ) : (
-                  <Button
-                    size="lg"
-                    onClick={startCamera}
-                    className="w-full h-14 text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
-                  >
-                    <Camera className="size-5 mr-2" /> Start QR Scanner
-                  </Button>
+                  <>
+                    <Button
+                      size="lg"
+                      onClick={startCamera}
+                      className="w-full h-13 text-sm font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
+                    >
+                      <Camera className="size-4 mr-2" /> Start Camera QR Scanner
+                    </Button>
+                    <label className="inline-flex items-center justify-center h-13 px-4 rounded-md border border-security-border bg-security hover:bg-white/5 text-white text-sm font-semibold cursor-pointer">
+                      <Upload className="size-4 mr-2" /> Scan QR Image File
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleScanImageFile(file);
+                        }}
+                      />
+                    </label>
+                  </>
                 )}
               </div>
 
-              {/* Demo / Manual Token Evaluation Input */}
+              {/* Registration ID / QR Token Input */}
               <div className="mt-8 pt-6 border-t border-security-border">
                 <p className="text-xs text-security-muted mb-2 font-semibold uppercase tracking-wider">
-                  Test / Manual QR Token Validation:
+                  Verify by Registration ID, Email, or QR Token:
                 </p>
                 <div className="flex gap-2">
                   <Input
                     value={manualToken}
                     onChange={(e) => setManualToken(e.target.value)}
-                    placeholder="Paste QR secret or use demo: demo-approved-qr-token-secret-123456"
+                    placeholder="Enter Registration ID (e.g. KLT26-000421) or email"
                     className="text-xs bg-security border-security-border text-white font-mono"
                   />
                   <Button
                     size="sm"
                     disabled={evaluating}
-                    onClick={() => evaluateToken(manualToken || "demo-approved-qr-token-secret-123456")}
-                    className="bg-primary hover:bg-primary/90"
+                    onClick={() => evaluateToken(manualToken || "KLT26-000421")}
+                    className="bg-primary hover:bg-primary/90 shrink-0"
                   >
-                    {evaluating ? "Checking..." : "Verify"}
+                    {evaluating ? "Checking..." : "Verify Pass"}
                   </Button>
                 </div>
               </div>
@@ -396,7 +439,7 @@ export default function SecurityGatePage() {
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-success" />
                   <span className="font-semibold text-sm tracking-wider uppercase text-success">
-                    Verified Participant
+                    Verified Static QR Pass
                   </span>
                 </div>
                 <span
@@ -408,7 +451,7 @@ export default function SecurityGatePage() {
                 </span>
               </div>
 
-              {/* Selfie Visual Inspection (Crucial Section 37) */}
+              {/* Selfie Visual Inspection */}
               <div className="grid sm:grid-cols-[180px_1fr] gap-6 items-center bg-black/40 p-5 rounded-lg border border-security-border">
                 <div className="size-44 mx-auto rounded-lg overflow-hidden border-2 border-primary shadow-xl bg-card">
                   <img
@@ -527,10 +570,10 @@ export default function SecurityGatePage() {
           <div className="surface bg-security-panel border-security-border p-6 rounded-lg">
             <h3 className="section-label text-security-muted mb-4">Security Protocol</h3>
             <ul className="space-y-2.5 text-xs text-security-muted leading-relaxed">
-              <li>1. Verify the front-facing registered photograph matches the person standing at the gate.</li>
-              <li>2. Check that the participant status indicates <strong>VERIFIED</strong>.</li>
-              <li>3. If participant is already INSIDE, system will strictly block duplicate entry.</li>
-              <li>4. For scanner or pass issues, notify Gate Supervisor for manual PIN override.</li>
+              <li>1. Scan the participant&apos;s single static QR pass from their email.</li>
+              <li>2. Verify the front-facing registered photograph matches the person at the gate.</li>
+              <li>3. If participant is already INSIDE, duplicate entry is automatically blocked.</li>
+              <li>4. Use ALLOW ENTRY when entering campus and ALLOW EXIT when leaving campus.</li>
             </ul>
           </div>
         </aside>

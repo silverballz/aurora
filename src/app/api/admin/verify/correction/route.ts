@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { memoryStore } from "@/lib/data/store";
+import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
 import { sendCorrectionEmail } from "@/lib/email/service";
 import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
+    loadStoreFromDisk();
     const { participant_id, reason } = await request.json();
 
     if (!participant_id || !reason) {
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
     participant.status = "CORRECTION";
     participant.correction_reason = reason.trim();
     participant.updated_at = new Date().toISOString();
+    saveStoreToDisk();
 
     // Send correction email to participant
     let emailSent = false;

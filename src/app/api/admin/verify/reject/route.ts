@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { memoryStore } from "@/lib/data/store";
+import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
 import { sendRejectionEmail } from "@/lib/email/service";
 import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: Request) {
   try {
+    loadStoreFromDisk();
     const { participant_id, reason } = await request.json();
 
     if (!participant_id || !reason) {
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
         qr.revoked_at = new Date().toISOString();
       }
     }
+    saveStoreToDisk();
 
     try {
       await sendRejectionEmail({

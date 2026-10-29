@@ -22,8 +22,8 @@ import { Brand } from "./aurora-shell";
 
 const adminNav = [
   { label: "Overview", href: "/admin", icon: BarChart3 },
-  { label: "Invitations", href: "/admin/invitations", icon: Mail },
   { label: "Verification queue", href: "/admin/verification", icon: Clock },
+  { label: "QR emails & SMTP", href: "/admin/invitations", icon: Mail },
   { label: "Participants", href: "/admin/participants", icon: Users },
   { label: "Access activity", href: "/admin/activity", icon: CheckSquare },
   { label: "Live occupancy", href: "/admin/occupancy", icon: Shield },
@@ -116,7 +116,7 @@ export function StaffShell({
         <div className="m-5 border-t border-sidebar-border pt-4">
           <div className="flex items-center justify-between gap-2">
             <Button asChild size="sm" variant="secondary" className="w-full text-xs">
-              <Link href="/portal">Participant Portal</Link>
+              <Link href="/register">Registration Form</Link>
             </Button>
             <Button asChild size="sm" className="w-full text-xs bg-primary hover:bg-primary/90">
               <Link href="/security">Gate Scanner</Link>

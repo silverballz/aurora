@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { memoryStore } from "@/lib/data/store";
+import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
+import { generateQrDataUrl } from "@/lib/qr/generator";
 
 export async function GET(request: Request) {
+  loadStoreFromDisk();
   const { searchParams } = new URL(request.url);
   const statusFilter = searchParams.get("status") || "UNDER_REVIEW";
   const query = searchParams.get("query")?.toLowerCase();
@@ -24,24 +26,32 @@ export async function GET(request: Request) {
 
   participants.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
-  // Attach documents and events to each participant
-  const populated = participants.map((p) => {
-    const docs = Array.from(memoryStore.documents.values()).filter((d) => d.participant_id === p.id);
-    const pes = Array.from(memoryStore.participantEvents.values()).filter((pe) => pe.participant_id === p.id);
-    const events = pes.map((pe) => memoryStore.events.get(pe.event_id)).filter(Boolean);
+  const populated = await Promise.all(
+    participants.map(async (p) => {
+      const docs = Array.from(memoryStore.documents.values()).filter((d) => d.participant_id === p.id);
+      const pes = Array.from(memoryStore.participantEvents.values()).filter((pe) => pe.participant_id === p.id);
+      const events = pes.map((pe) => memoryStore.events.get(pe.event_id)).filter(Boolean);
 
-    let paymentRef = null;
-    if (p.invitation_id && memoryStore.invitations.has(p.invitation_id)) {
-      paymentRef = memoryStore.invitations.get(p.invitation_id)?.payment_reference;
-    }
+      let paymentRef = p.payment_reference || null;
+      if (!paymentRef && p.invitation_id && memoryStore.invitations.has(p.invitation_id)) {
+        paymentRef = memoryStore.invitations.get(p.invitation_id)?.payment_reference || null;
+      }
 
-    return {
-      ...p,
-      documents: docs,
-      events,
-      payment_reference: paymentRef,
-    };
-  });
+      let qrDataUrl = p.qr_data_url || null;
+      if (!qrDataUrl && p.status === "APPROVED" && (p.qr_token || p.registration_id)) {
+        qrDataUrl = await generateQrDataUrl(p.qr_token || p.registration_id!);
+        p.qr_data_url = qrDataUrl;
+      }
+
+      return {
+        ...p,
+        documents: docs,
+        events,
+        payment_reference: paymentRef || "ONLINE-PAID",
+        qr_data_url: qrDataUrl,
+      };
+    })
+  );
 
   return NextResponse.json({
     participants: populated,

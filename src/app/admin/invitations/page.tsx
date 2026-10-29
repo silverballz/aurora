@@ -1,323 +1,265 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Check,
-  Copy,
-  Mail,
-  Plus,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { Check, Copy, Download, Eye, Mail, QrCode, RefreshCw, Settings } from "lucide-react";
 import { StaffShell } from "@/components/staff-shell";
-import { StatusPill } from "@/components/aurora-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
-export default function AdminInvitationsPage() {
-  const [invitations, setInvitations] = useState<any[]>([]);
-  const [metrics, setMetrics] = useState<any>(null);
+export default function AdminEmailsAndSmtpPage() {
+  const [emails, setEmails] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("ALL");
-  const [search, setSearch] = useState("");
+  const [selectedEmail, setSelectedEmail] = useState<any | null>(null);
 
-  // Modal State
-  const [modalOpen, setModalOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [paymentRef, setPaymentRef] = useState("");
-  const [paymentAmount, setPaymentAmount] = useState("500");
-  const [creating, setCreating] = useState(false);
-  const [createdInvite, setCreatedInvite] = useState<any>(null);
+  // SMTP / Resend Configuration
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [provider, setProvider] = useState("console");
+  const [savingConfig, setSavingConfig] = useState(false);
 
-  const fetchInvitations = async () => {
+  const fetchEmails = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/invitations/list?status=${filter}&query=${encodeURIComponent(search)}`);
+      const res = await fetch("/api/admin/emails");
       const data = await res.json();
-      setInvitations(data.invitations || []);
-      setMetrics(data.metrics || null);
-    } catch (err) {
-      toast.error("Failed to load invitations");
+      setEmails(data.emails || []);
+      if (data.config) {
+        setSmtpUser(data.config.smtpUser || "");
+        setProvider(data.config.provider || "console");
+      }
+    } catch {
+      toast.error("Failed to load email outbox");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchInvitations();
-  }, [filter, search]);
+    fetchEmails();
+  }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !mobile || !paymentRef) {
-      toast.error("Please fill in all mandatory fields.");
-      return;
-    }
-
     try {
-      setCreating(true);
-      const res = await fetch("/api/invitations/create", {
+      setSavingConfig(true);
+      const res = await fetch("/api/admin/emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          participant_name: name,
-          email,
-          mobile,
-          payment_reference: paymentRef,
-          payment_amount: paymentAmount,
+          smtpUser,
+          smtpPass,
+          resendApiKey,
         }),
       });
       const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.error || "Failed to create invitation.");
+      if (res.ok) {
+        setProvider(data.provider);
+        toast.success("Email delivery settings updated! All future QR passes will use these credentials.");
       } else {
-        toast.success("Invitation generated & dispatched successfully!");
-        setCreatedInvite(data);
-        fetchInvitations();
+        toast.error(data.error || "Failed to update settings.");
       }
     } catch {
-      toast.error("Network error creating invitation.");
+      toast.error("Network error saving settings.");
     } finally {
-      setCreating(false);
+      setSavingConfig(false);
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Invitation link copied to clipboard!");
-  };
+  const registrationUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/register` : "/register";
 
   return (
     <StaffShell
-      title="Invitations Management"
-      subtitle="Issue and audit payment-verified registration invitations"
+      title="QR Pass Emails & Registration Link"
+      subtitle="Share the public registration form link, inspect sent static QR pass emails, and configure free Gmail SMTP delivery"
       action={
-        <Button onClick={() => { setCreatedInvite(null); setModalOpen(true); }} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-          <Plus className="size-4 mr-1.5" /> Issue New Invitation
+        <Button size="sm" variant="outline" onClick={fetchEmails} className="text-xs">
+          <RefreshCw className="size-3.5 mr-1.5" /> Refresh Outbox
         </Button>
       }
     >
-      {/* Metric Badges */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <div className="surface p-4 text-center">
-          <span className="section-label">Total Issued</span>
-          <p className="font-display text-3xl mt-1">{metrics?.total ?? "—"}</p>
-        </div>
-        <div className="surface p-4 text-center">
-          <span className="section-label">Active / Pending</span>
-          <p className="font-display text-3xl mt-1 text-primary">{metrics?.active ?? "—"}</p>
-        </div>
-        <div className="surface p-4 text-center">
-          <span className="section-label">Redeemed / Used</span>
-          <p className="font-display text-3xl mt-1 text-success">{metrics?.used ?? "—"}</p>
-        </div>
-        <div className="surface p-4 text-center">
-          <span className="section-label">Expired / Revoked</span>
-          <p className="font-display text-3xl mt-1 text-muted-foreground">{metrics?.expired ?? "—"}</p>
-        </div>
-      </div>
-
-      {/* Filter / Search Bar */}
-      <div className="surface p-4 mb-6 flex flex-col sm:flex-row gap-4 justify-between items-center">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search participant or payment ref..."
-            className="pl-9 h-9 text-xs"
-          />
-        </div>
-
-        <div className="flex gap-2 w-full sm:w-auto">
-          {["ALL", "ACTIVE", "USED", "EXPIRED"].map((status) => (
+      <div className="space-y-8">
+        {/* Public Registration Form Share Banner */}
+        <section className="surface p-6 border-l-4 border-l-primary flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <p className="section-label text-primary">Public Registration Link (No OTP / No Login)</p>
+            <h2 className="font-display text-2xl mt-1">Share with External Participants</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Anyone with this link can fill out the Kaltarang 2026 registration form. Once submitted, their application appears in the Verification Queue for QR issuance.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+            <Input value={registrationUrl} readOnly className="text-xs font-mono w-full sm:w-72 bg-muted" />
             <Button
-              key={status}
               size="sm"
-              variant={filter === status ? "default" : "outline"}
-              onClick={() => setFilter(status)}
-              className="text-xs"
+              onClick={() => {
+                navigator.clipboard.writeText(registrationUrl);
+                toast.success("Public registration link copied!");
+              }}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
             >
-              {status}
+              <Copy className="size-3.5 mr-1.5" /> Copy Link
             </Button>
-          ))}
-        </div>
-      </div>
+          </div>
+        </section>
 
-      {/* Table */}
-      <div className="surface overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-muted/50 border-b border-border uppercase tracking-wider text-[10px] text-muted-foreground">
-            <tr>
-              <th className="py-3.5 px-4 font-semibold">Participant</th>
-              <th className="py-3.5 px-4 font-semibold">Email & Phone</th>
-              <th className="py-3.5 px-4 font-semibold">Payment Ref</th>
-              <th className="py-3.5 px-4 font-semibold">Status</th>
-              <th className="py-3.5 px-4 font-semibold">Created / Expiry</th>
-              <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {invitations.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="py-8 text-center text-muted-foreground">
-                  No invitations matching criteria found.
-                </td>
-              </tr>
-            ) : (
-              invitations.map((inv) => (
-                <tr key={inv.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="py-3.5 px-4 font-semibold text-foreground">
-                    {inv.participant_name}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <p>{inv.email}</p>
-                    <p className="text-muted-foreground text-[11px]">{inv.mobile}</p>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-medium text-primary">
-                    {inv.payment_reference}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <StatusPill
-                      tone={
-                        inv.status === "ACTIVE"
-                          ? "pending"
-                          : inv.status === "USED"
-                          ? "success"
-                          : "neutral"
-                      }
-                    >
-                      {inv.status}
-                    </StatusPill>
-                  </td>
-                  <td className="py-3.5 px-4 text-[11px] text-muted-foreground">
-                    <p>{new Date(inv.created_at).toLocaleDateString()}</p>
-                    <p>Exp: {new Date(inv.expires_at).toLocaleDateString()}</p>
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        copyToClipboard(`${window.location.origin}/portal/invite/${inv.token_hash}`)
-                      }
-                      title="Copy invitation link"
-                    >
-                      <Copy className="size-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Create Invitation Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="surface max-w-lg w-full p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-border pb-4 mb-5">
+        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          {/* Dispatched QR Pass Emails Outbox */}
+          <section className="surface overflow-hidden">
+            <div className="p-5 border-b border-border flex items-center justify-between">
               <div>
-                <h2 className="font-display text-2xl font-bold">Create Participant Invitation</h2>
-                <p className="text-xs text-muted-foreground">Only create invitations after verifying payment.</p>
+                <h3 className="font-display text-2xl">Dispatched QR Pass Emails ({emails.length})</h3>
+                <p className="text-xs text-muted-foreground">
+                  Every single static QR pass generated on approval is recorded here with full QR download & preview.
+                </p>
               </div>
-              <Button size="icon" variant="ghost" onClick={() => setModalOpen(false)}>
-                <X className="size-5" />
-              </Button>
             </div>
 
-            {createdInvite ? (
-              <div className="space-y-4">
-                <div className="p-4 bg-success/10 border border-success/20 rounded-lg text-sm">
-                  <p className="font-semibold text-success flex items-center gap-1.5">
-                    <Check className="size-4" /> Invitation Generated Successfully
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    An email was dispatched to <strong>{createdInvite.invitation.email}</strong>.
-                  </p>
-                </div>
-
-                <div className="bg-muted p-4 rounded-lg">
-                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
-                    Direct Invitation URL (for manual sharing):
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      readOnly
-                      value={`${window.location.origin}/portal/invite/${createdInvite.inviteToken}`}
-                      className="font-mono text-xs bg-background"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        copyToClipboard(`${window.location.origin}/portal/invite/${createdInvite.inviteToken}`)
-                      }
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <Button className="w-full mt-4" onClick={() => setModalOpen(false)}>
-                  Done
-                </Button>
+            {emails.length === 0 ? (
+              <div className="p-12 text-center text-xs text-muted-foreground">
+                No QR emails dispatched yet. Approve a participant in the Verification Queue to generate & email their static QR pass.
               </div>
             ) : (
-              <form onSubmit={handleCreate} className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold uppercase text-muted-foreground block mb-1">
-                    Participant Full Name *
-                  </label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full Name" required />
-                </div>
+              <div className="divide-y divide-border">
+                {emails.map((item) => (
+                  <div key={item.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/20">
+                    <div className="flex items-center gap-3.5">
+                      {item.qrDataUrl ? (
+                        <img
+                          src={item.qrDataUrl}
+                          alt="QR"
+                          className="size-12 rounded border border-border bg-white p-1 shrink-0"
+                        />
+                      ) : (
+                        <div className="size-12 rounded bg-primary/10 text-primary grid place-items-center shrink-0">
+                          <Mail className="size-5" />
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm">{item.participantName || item.to}</span>
+                          {item.registrationId && (
+                            <span className="text-[11px] font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
+                              {item.registrationId}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{item.to} · {item.subject}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+                          {new Date(item.timestamp).toLocaleString()} · Via: {item.deliveredVia}
+                        </p>
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-muted-foreground block mb-1">
-                      Email Address *
-                    </label>
-                    <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@college.edu" required />
+                    <div className="flex items-center gap-2 shrink-0">
+                      {item.qrDataUrl && (
+                        <a
+                          href={item.qrDataUrl}
+                          download={`${item.registrationId || "Pass"}-QR.png`}
+                          className="inline-flex items-center h-8 px-2.5 rounded border border-border text-xs font-medium hover:bg-muted"
+                        >
+                          <Download className="size-3.5 mr-1" /> QR PNG
+                        </a>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => setSelectedEmail(item)} className="h-8 text-xs">
+                        <Eye className="size-3.5 mr-1" /> View Email
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-muted-foreground block mb-1">
-                      Mobile Number *
-                    </label>
-                    <Input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="+919876543210" required />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-muted-foreground block mb-1">
-                      Payment Reference ID *
-                    </label>
-                    <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} placeholder="e.g. UPI / TXN-99420" required />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-muted-foreground block mb-1">
-                      Amount (INR)
-                    </label>
-                    <Input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-border flex justify-end gap-3">
-                  <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={creating} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold">
-                    {creating ? "Generating..." : "Generate Invitation"}
-                  </Button>
-                </div>
-              </form>
+                ))}
+              </div>
             )}
+          </section>
+
+          {/* Free SMTP / Resend Configuration Box */}
+          <aside className="surface p-6 space-y-4 h-fit">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="size-4 text-primary" />
+                <h3 className="font-semibold text-sm">Real Email Delivery Setup (Free)</h3>
+              </div>
+              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-primary/10 text-primary font-bold">
+                {provider}
+              </span>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Enter a free <strong>Gmail address + 16-char Google App Password</strong> (or Resend API key) to send QR pass emails directly to external participant inboxes.
+            </p>
+
+            <form onSubmit={handleSaveConfig} className="space-y-3">
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-muted-foreground block mb-1">
+                  Gmail Address (SMTP User)
+                </label>
+                <Input
+                  type="email"
+                  value={smtpUser}
+                  onChange={(e) => setSmtpUser(e.target.value)}
+                  placeholder="your.email@gmail.com"
+                  className="text-xs h-9"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-muted-foreground block mb-1">
+                  Gmail 16-Char App Password
+                </label>
+                <Input
+                  type="password"
+                  value={smtpPass}
+                  onChange={(e) => setSmtpPass(e.target.value)}
+                  placeholder="xxxx xxxx xxxx xxxx"
+                  className="text-xs h-9 font-mono"
+                />
+              </div>
+
+              <div className="pt-1 border-t border-border">
+                <label className="text-[11px] font-semibold uppercase text-muted-foreground block mb-1">
+                  Or Resend API Key (Optional)
+                </label>
+                <Input
+                  type="password"
+                  value={resendApiKey}
+                  onChange={(e) => setResendApiKey(e.target.value)}
+                  placeholder="re_..."
+                  className="text-xs h-9 font-mono"
+                />
+              </div>
+
+              <Button type="submit" disabled={savingConfig} className="w-full bg-primary text-primary-foreground text-xs h-9">
+                <Check className="size-3.5 mr-1.5" /> {savingConfig ? "Saving..." : "Save Email Settings"}
+              </Button>
+            </form>
+          </aside>
+        </div>
+      </div>
+
+      {/* Email HTML Preview Modal */}
+      {selectedEmail && (
+        <div
+          onClick={() => setSelectedEmail(null)}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="surface max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="font-semibold text-sm">{selectedEmail.subject}</h3>
+                <p className="text-xs text-muted-foreground">To: {selectedEmail.to}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setSelectedEmail(null)}>
+                Close
+              </Button>
+            </div>
+            <div
+              className="border border-border rounded-lg overflow-hidden bg-white"
+              dangerouslySetInnerHTML={{ __html: selectedEmail.html }}
+            />
           </div>
         </div>
       )}

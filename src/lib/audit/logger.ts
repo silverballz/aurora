@@ -1,4 +1,4 @@
-import { getAdminClient } from "@/lib/supabase/admin";
+import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
 
 export async function logAuditEvent(params: {
   actorId?: string | null;
@@ -8,19 +8,18 @@ export async function logAuditEvent(params: {
   metadata?: Record<string, unknown>;
 }) {
   try {
-    const supabase = getAdminClient();
-    const { error } = await supabase.from("audit_logs").insert({
-      actor_id: params.actorId || null,
+    loadStoreFromDisk();
+    memoryStore.auditLogs.push({
+      id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actor_id: params.actorId || "usr-super-admin-1",
       action: params.action,
       entity_type: params.entityType,
       entity_id: params.entityId || null,
       metadata: params.metadata || {},
-    } as any);
-
-    if (error) {
-      console.warn("Failed to persist audit log to DB (fallback log):", error.message, params);
-    }
+      created_at: new Date().toISOString(),
+    });
+    saveStoreToDisk();
   } catch (err) {
-    console.error("Audit log error:", err, params);
+    console.error("Audit log error:", err);
   }
 }
