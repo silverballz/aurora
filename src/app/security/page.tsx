@@ -20,8 +20,17 @@ import { toast } from "sonner";
 
 export default function SecurityGatePage() {
   const [selectedGate, setSelectedGate] = useState("gate-main");
-  const [operatorCode] = useState("SEC-014 (Gate Operator)");
+  const [operatorCode, setOperatorCode] = useState("SEC-014 (Gate Operator)");
   const [occupancy, setOccupancy] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const savedGate = localStorage.getItem("aurora_gate_id");
+      const savedOp = localStorage.getItem("aurora_operator_code");
+      if (savedGate) setSelectedGate(savedGate);
+      if (savedOp) setOperatorCode(`${savedOp} (Gate Operator)`);
+    } catch {}
+  }, []);
 
   // Scanner State
   const [scanning, setScanning] = useState(false);

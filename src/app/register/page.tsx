@@ -21,8 +21,45 @@ import { toast } from "sonner";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
+    // If not an image (e.g., PDF), read directly
+    if (!file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // Compress images client-side to max 1000px for fast mobile submission
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1000;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(String(ev.target?.result));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = () => resolve(String(ev.target?.result));
+      img.src = String(ev.target?.result);
+    };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });

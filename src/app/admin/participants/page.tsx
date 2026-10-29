@@ -122,7 +122,7 @@ export default function AdminParticipantsPage() {
                   </td>
                   <td className="py-3.5 px-4 text-right">
                     <Button asChild size="sm" variant="ghost">
-                      <Link href="/admin/verification">Inspect</Link>
+                      <Link href={`/admin/verification?id=${encodeURIComponent(p.id)}`}>Inspect</Link>
                     </Button>
                   </td>
                 </tr>

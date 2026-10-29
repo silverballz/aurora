@@ -28,13 +28,21 @@ export default function SecurityLoginPage() {
     }
 
     setLoading(true);
+    try {
+      localStorage.setItem("aurora_gate_id", gate);
+      localStorage.setItem("aurora_operator_code", operatorCode);
+    } catch {}
     toast.success(`Operator ${operatorCode} authenticated at ${gate.toUpperCase()}!`);
     setTimeout(() => {
       router.push("/security");
-    }, 600);
+    }, 400);
   };
 
   const handleQuickDemoOperator = () => {
+    try {
+      localStorage.setItem("aurora_gate_id", gate);
+      localStorage.setItem("aurora_operator_code", operatorCode || "SEC-014");
+    } catch {}
     toast.success("Logged in as Security Operator (SEC-014)!");
     router.push("/security");
   };

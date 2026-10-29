@@ -80,11 +80,18 @@ export default function AdminOverviewPage() {
       title="Operations Overview"
       subtitle="Kaltarang 2026 Campus Identity & Gate Access System"
       action={
-        <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
-          <Link href="/admin/invitations">
-            <Mail className="size-4 mr-2" /> Create New Invitation
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/admin/invitations">
+              <Mail className="size-4 mr-2" /> QR Emails & SMTP Setup
+            </Link>
+          </Button>
+          <Button asChild size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Link href="/admin/verification">
+              <ShieldCheck className="size-4 mr-2" /> Open Verification Desk
+            </Link>
+          </Button>
+        </div>
       }
     >
       {/* Metric Cards */}
@@ -135,7 +142,7 @@ export default function AdminOverviewPage() {
                   <div className="flex items-center gap-3">
                     <StatusPill tone="pending">Under Review</StatusPill>
                     <Button asChild size="sm" variant="ghost">
-                      <Link href="/admin/verification">
+                      <Link href={`/admin/verification?id=${encodeURIComponent(p.id)}`}>
                         Inspect <ArrowUpRight className="size-3.5 ml-1" />
                       </Link>
                     </Button>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { memoryStore, getNextRegistrationId, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
-import { generateSecureToken, hashToken, signQrToken } from "@/lib/crypto/tokens";
+import { createSignedParticipantQr, hashToken } from "@/lib/crypto/tokens";
 import { generateQrDataUrl } from "@/lib/qr/generator";
 import { sendApprovalEmail } from "@/lib/email/service";
 import { logAuditEvent } from "@/lib/audit/logger";
@@ -25,10 +25,17 @@ export async function POST(request: Request) {
     let signedQrPayload = participant.qr_token;
     let qrDataUrl = participant.qr_data_url;
 
-    if (!signedQrPayload || !qrDataUrl) {
-      const rawQrSecret = generateSecureToken(32);
-      signedQrPayload = signQrToken(rawQrSecret);
-      const tokenHash = hashToken(rawQrSecret);
+    if (!signedQrPayload || !qrDataUrl || !signedQrPayload.startsWith("KLT26.")) {
+      signedQrPayload = createSignedParticipantQr({
+        id: participant.id,
+        reg: registrationId,
+        name: participant.full_name,
+        email: participant.email,
+        col: participant.college || "External Institution",
+        crs: participant.course || "Degree Program",
+        yr: participant.year_of_study || "3rd Year",
+      });
+      const tokenHash = hashToken(signedQrPayload);
       qrDataUrl = await generateQrDataUrl(signedQrPayload);
 
       // Register active static QR pass in store
@@ -58,8 +65,11 @@ export async function POST(request: Request) {
 
     // 3. Send Email with the Single Static QR Pass
     let emailSent = false;
+    let realEmailDelivered = false;
     let deliveredVia = "outbox";
+    let emailError: string | undefined;
     try {
+      const origin = new URL(request.url).origin;
       const emailResult = await sendApprovalEmail({
         to: participant.email,
         participantName: participant.full_name,
@@ -68,9 +78,13 @@ export async function POST(request: Request) {
         course: participant.course || "Degree Course",
         year: participant.year_of_study || "Participant Year",
         qrDataUrl,
+        qrToken: signedQrPayload,
+        baseUrl: origin,
       });
       emailSent = emailResult.success;
+      realEmailDelivered = emailResult.realEmailDelivered;
       deliveredVia = emailResult.deliveredVia || "outbox";
+      emailError = emailResult.error;
     } catch (emailErr) {
       console.warn("Approval confirmation email delivery failed:", emailErr);
     }
@@ -84,6 +98,7 @@ export async function POST(request: Request) {
         registration_id: registrationId,
         email: participant.email,
         emailDelivered: emailSent,
+        realEmailDelivered,
         deliveredVia,
       },
     });
@@ -96,10 +111,12 @@ export async function POST(request: Request) {
       qrDataUrl,
       qrToken: signedQrPayload,
       emailSent,
+      realEmailDelivered,
       deliveredVia,
-      message: resend
-        ? `Single static QR pass resent to ${participant.email}`
-        : `Participant approved! Single static QR pass (${registrationId}) generated and emailed to ${participant.email}.`,
+      emailError,
+      message: realEmailDelivered
+        ? `Approved! Single static QR pass (${registrationId}) sent via ${deliveredVia} to ${participant.email}.`
+        : `Approved! Static QR pass (${registrationId}) generated & saved to QR Outbox (configure Gmail SMTP to deliver directly to inbox).`,
     });
   } catch (error) {
     console.error("Approval error:", error);

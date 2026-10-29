@@ -40,6 +40,53 @@ export default function AdminVerificationPage() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  // Inline SMTP Quick-Setup Modal
+  const [smtpModalOpen, setSmtpModalOpen] = useState(false);
+  const [smtpReady, setSmtpReady] = useState(false);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [savingSmtp, setSavingSmtp] = useState(false);
+
+  const fetchEmailConfig = async () => {
+    try {
+      const res = await fetch("/api/admin/emails");
+      const data = await res.json();
+      if (data.config) {
+        setSmtpUser(data.config.smtpUser || "");
+        setSmtpReady(Boolean(data.config.hasSmtpPass || data.config.hasResendKey));
+      }
+    } catch {}
+  };
+
+  const handleSaveSmtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSavingSmtp(true);
+      const res = await fetch("/api/admin/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          smtpHost: "smtp.gmail.com",
+          smtpPort: 465,
+          smtpUser,
+          smtpPass,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Gmail SMTP connected!");
+        setSmtpReady(true);
+        setSmtpModalOpen(false);
+      } else {
+        toast.error(data.error || "Failed to save SMTP config.");
+      }
+    } catch {
+      toast.error("Failed to save SMTP config.");
+    } finally {
+      setSavingSmtp(false);
+    }
+  };
+
   const fetchQueue = async () => {
     try {
       setLoading(true);
@@ -49,7 +96,14 @@ export default function AdminVerificationPage() {
       const data = await res.json();
       setParticipants(data.participants || []);
       if (data.counts) setCounts(data.counts);
-      if (data.participants?.length > 0 && !selectedId) {
+
+      const urlId =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("id")
+          : null;
+      if (urlId && data.participants?.some((p: any) => p.id === urlId)) {
+        setSelectedId(urlId);
+      } else if (data.participants?.length > 0 && !selectedId) {
         setSelectedId(data.participants[0].id);
       }
     } catch {
@@ -61,6 +115,7 @@ export default function AdminVerificationPage() {
 
   useEffect(() => {
     fetchQueue();
+    fetchEmailConfig();
   }, [statusFilter, search]);
 
   const selectedParticipant = participants.find((p) => p.id === selectedId) || participants[0];
@@ -157,9 +212,20 @@ export default function AdminVerificationPage() {
       title="Participant Verification & QR Issuance"
       subtitle="Review submitted registrations, inspect documents, and generate & email each participant's single static QR pass"
       action={
-        <Button size="sm" variant="outline" onClick={fetchQueue} className="text-xs">
-          <RefreshCw className="size-3.5 mr-1.5" /> Refresh Queue
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={smtpReady ? "outline" : "default"}
+            onClick={() => setSmtpModalOpen(true)}
+            className="text-xs"
+          >
+            <Mail className="size-3.5 mr-1.5" />
+            {smtpReady ? "SMTP Connected ✓" : "Connect Gmail SMTP"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={fetchQueue} className="text-xs">
+            <RefreshCw className="size-3.5 mr-1.5" /> Refresh Queue
+          </Button>
+        </div>
       }
     >
       {/* Top Filter */}
@@ -340,6 +406,16 @@ export default function AdminVerificationPage() {
                     >
                       <Copy className="size-3.5 mr-1.5" /> Copy QR Token
                     </Button>
+                    <a
+                      href={`https://wa.me/${String(selectedParticipant.mobile || "").replace(/\D/g, "")}?text=${encodeURIComponent(
+                        `Kaltarang 2026 (RGIPT) — Your Registration (${selectedParticipant.registration_id}) is APPROVED! Your single static QR Pass: ${window.location.origin}/api/qr?data=${encodeURIComponent(selectedParticipant.qr_token || selectedParticipant.registration_id)}`
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center h-8 px-3 rounded-md border border-border hover:bg-muted text-xs font-medium"
+                    >
+                      <ExternalLink className="size-3.5 mr-1.5" /> Share via WhatsApp
+                    </a>
                   </div>
                 </div>
               )}
@@ -553,6 +629,61 @@ export default function AdminVerificationPage() {
                 </Button>
                 <Button type="submit" disabled={actionLoading} className="bg-warning text-warning-foreground hover:bg-warning/90">
                   Send Correction Request
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Inline SMTP Setup Modal */}
+      {smtpModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="surface max-w-md w-full p-6 space-y-4">
+            <h3 className="font-display text-2xl font-bold">Connect Free Gmail SMTP</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Enter a Gmail address and 16-character Google App Password (from{" "}
+              <a
+                href="https://myaccount.google.com/apppasswords"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline font-semibold"
+              >
+                myaccount.google.com/apppasswords
+              </a>
+              ) so approved QR passes are delivered directly to participants&apos; real email inboxes.
+            </p>
+            <form onSubmit={handleSaveSmtp} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Sender Gmail Address *
+                </label>
+                <Input
+                  type="email"
+                  value={smtpUser}
+                  onChange={(e) => setSmtpUser(e.target.value)}
+                  placeholder="your.email@gmail.com or 24mc3008@rgipt.ac.in"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  16-Character Google App Password *
+                </label>
+                <Input
+                  type="password"
+                  value={smtpPass}
+                  onChange={(e) => setSmtpPass(e.target.value)}
+                  placeholder="xxxx xxxx xxxx xxxx"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setSmtpModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={savingSmtp} className="bg-primary text-primary-foreground">
+                  {savingSmtp ? "Saving..." : "Save & Enable Real Emails"}
                 </Button>
               </div>
             </form>

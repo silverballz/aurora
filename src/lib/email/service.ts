@@ -9,6 +9,7 @@ export interface EmailPayload {
   text?: string;
   registrationId?: string;
   qrDataUrl?: string;
+  qrToken?: string;
   participantName?: string;
 }
 
@@ -32,7 +33,13 @@ export function getDevMailbox(): DevEmailLog[] {
  */
 export async function sendEmail(
   payload: EmailPayload
-): Promise<{ success: boolean; messageId?: string; deliveredVia?: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  realEmailDelivered: boolean;
+  messageId?: string;
+  deliveredVia?: string;
+  error?: string;
+}> {
   loadStoreFromDisk();
 
   const cfg = memoryStore.emailConfig;
@@ -41,13 +48,16 @@ export async function sendEmail(
   const smtpPass = cfg?.smtpPass || process.env.SMTP_PASSWORD || "";
   const smtpHost = cfg?.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com";
   const smtpPort = cfg?.smtpPort || parseInt(process.env.SMTP_PORT || "465", 10);
-  const from = cfg?.fromEmail || process.env.EMAIL_FROM || (smtpUser ? `Kaltarang 2026 <${smtpUser}>` : "Kaltarang 2026 <onboarding@resend.dev>");
+  const from =
+    cfg?.fromEmail ||
+    process.env.EMAIL_FROM ||
+    (smtpUser ? `Kaltarang 2026 <${smtpUser}>` : "Kaltarang 2026 <onboarding@resend.dev>");
 
   const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   let deliveredVia = "outbox";
+  let realEmailDelivered = false;
   let externalError: string | undefined;
 
-  // Prepare inline QR attachment if qrDataUrl is present
   const qrBase64 = payload.qrDataUrl?.startsWith("data:image/png;base64,")
     ? payload.qrDataUrl.replace("data:image/png;base64,", "")
     : null;
@@ -87,6 +97,7 @@ export async function sendEmail(
       });
 
       deliveredVia = `smtp (${smtpUser})`;
+      realEmailDelivered = true;
       console.log(`[AURORA EMAIL] Sent via SMTP to ${payload.to}: ${info.messageId}`);
     } catch (err: unknown) {
       externalError = err instanceof Error ? err.message : String(err);
@@ -94,7 +105,7 @@ export async function sendEmail(
     }
   }
   // 2. Try Resend if configured (Free tier: 3,000 emails/month)
-  else if (resendKey) {
+  else if (resendKey && !resendKey.startsWith("re_1234")) {
     try {
       const resend = new Resend(resendKey);
       const res = await resend.emails.send({
@@ -118,6 +129,7 @@ export async function sendEmail(
         console.error("Resend API error:", res.error);
       } else {
         deliveredVia = "resend";
+        realEmailDelivered = true;
       }
     } catch (err: unknown) {
       externalError = err instanceof Error ? err.message : String(err);
@@ -139,15 +151,9 @@ export async function sendEmail(
   });
   saveStoreToDisk();
 
-  console.log(`\n================== [AURORA EMAIL DISPATCHED] ==================`);
-  console.log(`TO: ${payload.to}`);
-  console.log(`SUBJECT: ${payload.subject}`);
-  console.log(`DELIVERED VIA: ${deliveredVia}`);
-  if (payload.registrationId) console.log(`REGISTRATION ID: ${payload.registrationId}`);
-  console.log(`===============================================================\n`);
-
   return {
     success: true,
+    realEmailDelivered,
     messageId: id,
     deliveredVia,
     error: externalError,
@@ -165,6 +171,8 @@ export async function sendApprovalEmail(params: {
   course: string;
   year: string;
   qrDataUrl: string;
+  qrToken?: string;
+  baseUrl?: string;
 }) {
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background: #faf9fb; color: #1e1b24;">
@@ -214,8 +222,10 @@ export async function sendApprovalEmail(params: {
     to: params.to,
     subject: `Kaltarang 2026 — Your Official Campus QR Pass (${params.registrationId})`,
     html,
+    text: `Dear ${params.participantName}, Your Kaltarang 2026 Campus Registration (${params.registrationId}) is APPROVED. Please open this email or see the attached QR PNG to scan at RGIPT campus gates.`,
     registrationId: params.registrationId,
     qrDataUrl: params.qrDataUrl,
+    qrToken: params.qrToken,
     participantName: params.participantName,
   });
 }

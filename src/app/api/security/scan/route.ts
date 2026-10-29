@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { memoryStore, loadStoreFromDisk } from "@/lib/data/store";
-import { verifyAndExtractQrToken, hashToken } from "@/lib/crypto/tokens";
+import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
+import { verifyAndExtractQrToken, verifySignedParticipantQr, hashToken } from "@/lib/crypto/tokens";
 import { Participant } from "@/lib/types/database";
 
 export async function POST(request: Request) {
@@ -17,7 +17,11 @@ export async function POST(request: Request) {
 
     const trimmed = token.trim();
     let rawToken = trimmed;
-    if (trimmed.includes(".")) {
+
+    // 1. Check if token is a self-contained cryptographically signed KLT26.<payload>.<sig> QR pass
+    const signedCheck = verifySignedParticipantQr(trimmed);
+
+    if (!signedCheck.valid && trimmed.includes(".")) {
       const { valid, rawToken: extracted } = verifyAndExtractQrToken(trimmed);
       if (valid) {
         rawToken = extracted;
@@ -26,7 +30,7 @@ export async function POST(request: Request) {
 
     const tokenHash = hashToken(rawToken);
 
-    // 1. Look up Participant by QR pass, qr_token, registration_id, or email
+    // 2. Look up Participant by QR pass, qr_token, registration_id, or email
     let participant: Participant | undefined;
 
     const qrPass = memoryStore.qrPasses.get(tokenHash);
@@ -38,6 +42,10 @@ export async function POST(request: Request) {
         );
       }
       participant = memoryStore.participants.get(qrPass.participant_id);
+    }
+
+    if (!participant && signedCheck.valid && signedCheck.claims) {
+      participant = memoryStore.participants.get(signedCheck.claims.id);
     }
 
     if (!participant) {
@@ -55,6 +63,48 @@ export async function POST(request: Request) {
           break;
         }
       }
+    }
+
+    // 3. Serverless / Multi-Instance Hydration:
+    // If the QR token has a valid cryptographic HMAC signature (KLT26.<payload>.<sig>)
+    // and this serverless instance cold-started without the participant in memoryStore,
+    // automatically hydrate the verified participant so Entry/Exit works seamlessly!
+    if (!participant && signedCheck.valid && signedCheck.claims) {
+      const c = signedCheck.claims;
+      const now = new Date().toISOString();
+      participant = {
+        id: c.id,
+        user_id: `usr-${c.id}`,
+        invitation_id: null,
+        registration_id: c.reg,
+        full_name: c.name,
+        email: c.email,
+        mobile: "",
+        college: c.col,
+        course: c.crs,
+        year_of_study: c.yr,
+        address: "",
+        city: "",
+        state: "",
+        pincode: "",
+        selfie_path: "/assets/participant-avatar.jpg",
+        student_id_path: null,
+        aadhaar_path: null,
+        payment_reference: "VERIFIED",
+        qr_token: trimmed,
+        qr_data_url: null,
+        status: "APPROVED",
+        campus_status: "OUTSIDE",
+        correction_reason: null,
+        rejection_reason: null,
+        created_at: now,
+        updated_at: now,
+        submitted_at: now,
+        approved_at: now,
+        approved_by: "usr-super-admin-1",
+      };
+      memoryStore.participants.set(participant.id, participant);
+      saveStoreToDisk();
     }
 
     if (!participant) {
