@@ -16,8 +16,17 @@ import { hashToken } from "@/lib/crypto/tokens";
 const STORE_FILE_PATH = "/tmp/aurora-kaltarang-2026-store.json";
 const CLOUD_INDEX_TOPIC =
   process.env.AURORA_CLOUD_TOPIC || "aurora_klt26_rgipt_prod_store_v3_7f91c2e4";
-const CLOUD_POINTER_URL =
-  "https://api.restful-api.dev/objects/ff808181a09d98f701a18892dca854f9";
+
+// Unlimited-read mutable Bytebin pointer (no daily request cap, 30+ day retention)
+const BYTEBIN_POINTER_URL = "https://bytebin.lucko.me/YxLvSeVf7g";
+const BYTEBIN_POINTER_MOD_KEY = "3haVtq40O3g4p54Laa2MVZDU30oQ3JNZ";
+
+// Redundant multi-object pointer pool
+const CLOUD_POINTER_URLS = [
+  "https://api.restful-api.dev/objects/ff808181a09d98f701a18892dca854f9",
+  "https://api.restful-api.dev/objects/ff808181a09d98f701a18c899b5561a6",
+  "https://api.restful-api.dev/objects/ff808181a09d98f701a18c899eef61a8",
+];
 
 export interface SentEmailRecord {
   id: string;
@@ -62,6 +71,8 @@ export interface AuroraStore {
 const globalForAurora = globalThis as unknown as {
   __AURORA_STORE__?: AuroraStore;
   __AURORA_APPLIED_BLOBS__?: Set<string>;
+  __AURORA_LAST_SYNC_TS__?: number;
+  __AURORA_INFLIGHT_SYNC__?: Promise<boolean> | null;
 };
 
 const appliedBlobKeys: Set<string> =
@@ -187,8 +198,9 @@ function serializeStore() {
     auditLogs: memoryStore.auditLogs.slice(-300),
     sentEmails: memoryStore.sentEmails.slice(-150).map((e) => ({
       ...e,
-      // Keep email log lightweight
-      html: e.html && e.html.length > 1500 ? "" : e.html,
+      // Keep email log lightweight across 4+ days of festival operations
+      html: "",
+      qrDataUrl: undefined,
     })),
     emailConfig: memoryStore.emailConfig,
   };
@@ -298,33 +310,53 @@ export async function saveStoreToDisk(): Promise<void> {
     console.warn("Could not persist store to local disk:", err);
   }
 
-  // 2. Sync to shared serverless cloud store (bytebin + dual pointers)
+  // 2. Sync to shared serverless cloud store (bytebin snapshot + multi-pointer redundancy)
   try {
     const postRes = await fetch("https://bytebin.lucko.me/post", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: jsonStr,
       cache: "no-store",
+      signal: AbortSignal.timeout(6000),
     });
 
     if (postRes.ok) {
       const { key } = await postRes.json();
       if (key) {
         appliedBlobKeys.add(key);
+        globalForAurora.__AURORA_LAST_SYNC_TS__ = Date.now();
+        const pointerPayload = { blobKey: key, ts: Date.now() };
+
+        // Update primary unlimited Bytebin pointer + rotate across backup pointers + ntfy stream
+        const primaryPtrUrl =
+          CLOUD_POINTER_URLS[Math.floor(Math.random() * CLOUD_POINTER_URLS.length)];
+
         await Promise.allSettled([
-          fetch(CLOUD_POINTER_URL, {
+          fetch(BYTEBIN_POINTER_URL, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${BYTEBIN_POINTER_MOD_KEY}`,
+            },
+            body: JSON.stringify(pointerPayload),
+            cache: "no-store",
+            signal: AbortSignal.timeout(4500),
+          }),
+          fetch(primaryPtrUrl, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: "aurora-klt26-store-pointer",
-              data: { blobKey: key, ts: Date.now() },
+              data: pointerPayload,
             }),
             cache: "no-store",
+            signal: AbortSignal.timeout(4000),
           }),
           fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}`, {
             method: "POST",
-            body: JSON.stringify({ blobKey: key, ts: Date.now() }),
+            body: JSON.stringify(pointerPayload),
             cache: "no-store",
+            signal: AbortSignal.timeout(4000),
           }),
         ]);
       }
@@ -334,84 +366,139 @@ export async function saveStoreToDisk(): Promise<void> {
   }
 }
 
-export async function loadStoreFromDisk(): Promise<boolean> {
-  let loaded = false;
-
-  // 1. Load from local /tmp if present
-  try {
-    if (fs.existsSync(STORE_FILE_PATH)) {
-      const raw = fs.readFileSync(STORE_FILE_PATH, "utf-8");
-      const data = JSON.parse(raw);
-      if (data && data.gates && data.gates.length > 0) {
-        mergeSerializedIntoMemory(data);
-        loaded = true;
-      }
-    }
-  } catch (err) {
-    console.warn("Local disk load warning:", err);
+export async function loadStoreFromDisk(force = false): Promise<boolean> {
+  // Coalesce concurrent requests within 2.5 seconds on the same warm serverless instance
+  const now = Date.now();
+  if (
+    !force &&
+    globalForAurora.__AURORA_LAST_SYNC_TS__ &&
+    now - globalForAurora.__AURORA_LAST_SYNC_TS__ < 2500 &&
+    memoryStore.participants.size > 0
+  ) {
+    enforceSingleGate();
+    return true;
   }
 
-  // 2. Pull latest snapshots from shared serverless cloud store
-  try {
-    const keysToFetch: string[] = [];
+  if (!force && globalForAurora.__AURORA_INFLIGHT_SYNC__) {
+    return globalForAurora.__AURORA_INFLIGHT_SYNC__;
+  }
 
-    // Primary fast pointer (no rate limit)
+  const syncTask = (async (): Promise<boolean> => {
+    let loaded = false;
+
+    // 1. Load from local /tmp if present
     try {
-      const ptrRes = await fetch(CLOUD_POINTER_URL, { cache: "no-store" });
-      if (ptrRes.ok) {
-        const ptrJson = await ptrRes.json();
-        const k = ptrJson?.data?.blobKey;
-        if (k && !keysToFetch.includes(k)) {
-          keysToFetch.push(k);
-        }
-      }
-    } catch {}
-
-    // Secondary pointer fallback (ntfy) only if primary didn't return a new key
-    if (keysToFetch.length === 0) {
-      try {
-        const res = await fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}/json?poll=1&since=all`, {
-          cache: "no-store",
-        });
-        if (res.ok) {
-          const text = (await res.text()).trim();
-          if (text) {
-            const lines = text.split("\n");
-            for (const line of lines.slice(-3)) {
-              try {
-                const evt = JSON.parse(line);
-                if (evt.event === "message" && evt.message) {
-                  const msg = JSON.parse(evt.message);
-                  if (msg.blobKey && !keysToFetch.includes(msg.blobKey)) {
-                    keysToFetch.push(msg.blobKey);
-                  }
-                }
-              } catch {}
-            }
-          }
-        }
-      } catch {}
-    }
-
-    for (const key of keysToFetch) {
-      if (!appliedBlobKeys.has(key)) {
-        const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, {
-          cache: "no-store",
-        });
-        if (blobRes.ok) {
-          const cloudData = await blobRes.json();
-          mergeSerializedIntoMemory(cloudData);
-          appliedBlobKeys.add(key);
+      if (fs.existsSync(STORE_FILE_PATH)) {
+        const raw = fs.readFileSync(STORE_FILE_PATH, "utf-8");
+        const data = JSON.parse(raw);
+        if (data && data.gates && data.gates.length > 0) {
+          mergeSerializedIntoMemory(data);
           loaded = true;
         }
       }
+    } catch (err) {
+      console.warn("Local disk load warning:", err);
     }
-  } catch (err) {
-    console.warn("Cloud store pull warning:", err);
-  }
 
-  enforceSingleGate();
-  return loaded;
+    // 2. Pull latest snapshots from shared serverless cloud store
+    try {
+      const candidates: { blobKey: string; ts: number }[] = [];
+
+      // Tier A: Unlimited-rate Bytebin mutable pointer + one rotating restful-api pointer in parallel
+      const rotatingPtr =
+        CLOUD_POINTER_URLS[Math.floor(Math.random() * CLOUD_POINTER_URLS.length)];
+
+      const [bytebinPtrRes, restPtrRes] = await Promise.allSettled([
+        fetch(BYTEBIN_POINTER_URL, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(3500),
+        }),
+        fetch(rotatingPtr, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(3500),
+        }),
+      ]);
+
+      if (bytebinPtrRes.status === "fulfilled" && bytebinPtrRes.value.ok) {
+        try {
+          const j = await bytebinPtrRes.value.json();
+          if (j?.blobKey) {
+            candidates.push({ blobKey: j.blobKey, ts: Number(j.ts || 0) });
+          }
+        } catch {}
+      }
+
+      if (restPtrRes.status === "fulfilled" && restPtrRes.value.ok) {
+        try {
+          const j = await restPtrRes.value.json();
+          const k = j?.data?.blobKey;
+          if (k) {
+            candidates.push({ blobKey: k, ts: Number(j?.data?.ts || 0) });
+          }
+        } catch {}
+      }
+
+      // Tier B: Secondary fallback (ntfy stream) only if Tier A returned nothing
+      if (candidates.length === 0) {
+        try {
+          const res = await fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}/json?poll=1&since=all`, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(3500),
+          });
+          if (res.ok) {
+            const text = (await res.text()).trim();
+            if (text) {
+              const lines = text.split("\n");
+              for (const line of lines.slice(-3)) {
+                try {
+                  const evt = JSON.parse(line);
+                  if (evt.event === "message" && evt.message) {
+                    const msg = JSON.parse(evt.message);
+                    if (msg.blobKey) {
+                      candidates.push({ blobKey: msg.blobKey, ts: Number(msg.ts || 0) });
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Sort candidates from oldest to newest so the newest snapshot wins
+      candidates.sort((a, b) => a.ts - b.ts);
+      const uniqueKeys = Array.from(new Set(candidates.map((c) => c.blobKey)));
+
+      for (const key of uniqueKeys) {
+        if (!appliedBlobKeys.has(key)) {
+          const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(4500),
+          });
+          if (blobRes.ok) {
+            const cloudData = await blobRes.json();
+            mergeSerializedIntoMemory(cloudData);
+            appliedBlobKeys.add(key);
+            loaded = true;
+          }
+        }
+      }
+
+      globalForAurora.__AURORA_LAST_SYNC_TS__ = Date.now();
+    } catch (err) {
+      console.warn("Cloud store pull warning:", err);
+    }
+
+    enforceSingleGate();
+    return loaded;
+  })();
+
+  globalForAurora.__AURORA_INFLIGHT_SYNC__ = syncTask;
+  try {
+    return await syncTask;
+  } finally {
+    globalForAurora.__AURORA_INFLIGHT_SYNC__ = null;
+  }
 }
 
 export function getNextRegistrationId(): string {
