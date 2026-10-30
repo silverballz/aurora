@@ -46,6 +46,7 @@ export interface AuroraStore {
   users: Map<string, User>;
   invitations: Map<string, Invitation>;
   participants: Map<string, Participant>;
+  deletedParticipantIds: Set<string>;
   events: Map<string, Event>;
   participantEvents: Map<string, ParticipantEvent>;
   documents: Map<string, Document>;
@@ -73,6 +74,7 @@ function createEmptyStore(): AuroraStore {
     users: new Map<string, User>(),
     invitations: new Map<string, Invitation>(),
     participants: new Map<string, Participant>(),
+    deletedParticipantIds: new Set<string>(),
     events: new Map<string, Event>(),
     participantEvents: new Map<string, ParticipantEvent>(),
     documents: new Map<string, Document>(),
@@ -101,28 +103,108 @@ function createEmptyStore(): AuroraStore {
 export const memoryStore: AuroraStore =
   globalForAurora.__AURORA_STORE__ || createEmptyStore();
 
+if (!memoryStore.deletedParticipantIds) {
+  memoryStore.deletedParticipantIds = new Set<string>();
+}
+
 globalForAurora.__AURORA_STORE__ = memoryStore;
 
+const SINGLE_MAIN_GATE: Gate = {
+  id: "gate-main",
+  name: "RGIPT MAIN GATE",
+  location: "Rajiv Gandhi Institute of Petroleum Technology · Main Campus Entrance",
+  status: "ACTIVE",
+  created_at: new Date().toISOString(),
+};
+
+function enforceSingleGate() {
+  memoryStore.gates.clear();
+  memoryStore.gates.set(SINGLE_MAIN_GATE.id, SINGLE_MAIN_GATE);
+}
+
+/**
+ * Offloads heavy base64 images for a participant into an isolated cloud blob
+ * so the master store index stays ~350 bytes per participant (supporting 120-500+ participants effortlessly).
+ */
+export async function offloadParticipantImages(p: Participant): Promise<void> {
+  const hasInlineSelfie = Boolean(p.selfie_path && p.selfie_path.startsWith("data:image") && p.selfie_path.length > 500);
+  const hasInlineStu = Boolean(p.student_id_path && p.student_id_path.startsWith("data:image") && p.student_id_path.length > 500);
+  const hasInlineAad = Boolean(p.aadhaar_path && p.aadhaar_path.startsWith("data:image") && p.aadhaar_path.length > 500);
+
+  if (!hasInlineSelfie && !hasInlineStu && !hasInlineAad) return;
+
+  try {
+    const payload = {
+      selfie: hasInlineSelfie ? p.selfie_path : undefined,
+      student_id: hasInlineStu ? p.student_id_path : undefined,
+      aadhaar: hasInlineAad ? p.aadhaar_path : undefined,
+    };
+
+    const res = await fetch("https://bytebin.lucko.me/post", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+
+    if (res.ok) {
+      const { key } = await res.json();
+      if (key) {
+        if (hasInlineSelfie) p.selfie_path = `/api/doc?key=${key}&f=selfie`;
+        if (hasInlineStu) p.student_id_path = `/api/doc?key=${key}&f=student_id`;
+        if (hasInlineAad) p.aadhaar_path = `/api/doc?key=${key}&f=aadhaar`;
+
+        // Also slim down corresponding Document records
+        const stuDoc = memoryStore.documents.get(`doc-stu-${p.id}`);
+        if (stuDoc && stuDoc.storage_path?.startsWith("data:image")) {
+          stuDoc.storage_path = `/api/doc?key=${key}&f=student_id`;
+        }
+        const aadDoc = memoryStore.documents.get(`doc-aad-${p.id}`);
+        if (aadDoc && aadDoc.storage_path?.startsWith("data:image")) {
+          aadDoc.storage_path = `/api/doc?key=${key}&f=aadhaar`;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Image offload warning:", err);
+  }
+}
+
 function serializeStore() {
+  enforceSingleGate();
   return {
     registrationCounter: memoryStore.registrationCounter,
     users: Array.from(memoryStore.users.entries()),
     invitations: Array.from(memoryStore.invitations.entries()),
     participants: Array.from(memoryStore.participants.entries()),
+    deletedParticipantIds: Array.from(memoryStore.deletedParticipantIds),
     events: Array.from(memoryStore.events.entries()),
     participantEvents: Array.from(memoryStore.participantEvents.entries()),
     documents: Array.from(memoryStore.documents.entries()),
     qrPasses: Array.from(memoryStore.qrPasses.entries()),
     gates: Array.from(memoryStore.gates.entries()),
-    accessLogs: memoryStore.accessLogs,
-    auditLogs: memoryStore.auditLogs,
-    sentEmails: memoryStore.sentEmails,
+    accessLogs: memoryStore.accessLogs.slice(-500),
+    auditLogs: memoryStore.auditLogs.slice(-300),
+    sentEmails: memoryStore.sentEmails.slice(-150).map((e) => ({
+      ...e,
+      // Keep email log lightweight
+      html: e.html && e.html.length > 1500 ? "" : e.html,
+    })),
     emailConfig: memoryStore.emailConfig,
   };
 }
 
 function mergeSerializedIntoMemory(data: any) {
   if (!data) return;
+
+  if (Array.isArray(data.deletedParticipantIds)) {
+    for (const delId of data.deletedParticipantIds) {
+      memoryStore.deletedParticipantIds.add(delId);
+      memoryStore.participants.delete(delId);
+      memoryStore.documents.delete(`doc-stu-${delId}`);
+      memoryStore.documents.delete(`doc-aad-${delId}`);
+    }
+  }
 
   if (typeof data.registrationCounter === "number") {
     memoryStore.registrationCounter = Math.max(
@@ -138,6 +220,7 @@ function mergeSerializedIntoMemory(data: any) {
     memoryStore.invitations.set(k, v);
   }
   for (const [k, v] of (data.participants || []) as [string, Participant][]) {
+    if (memoryStore.deletedParticipantIds.has(k)) continue;
     const existing = memoryStore.participants.get(k);
     if (
       !existing ||
@@ -153,19 +236,24 @@ function mergeSerializedIntoMemory(data: any) {
     memoryStore.participantEvents.set(k, v);
   }
   for (const [k, v] of (data.documents || []) as [string, Document][]) {
+    if (v?.participant_id && memoryStore.deletedParticipantIds.has(v.participant_id)) continue;
     memoryStore.documents.set(k, v);
   }
   for (const [k, v] of (data.qrPasses || []) as [string, QrPass][]) {
+    if (v?.participant_id && memoryStore.deletedParticipantIds.has(v.participant_id)) continue;
     memoryStore.qrPasses.set(k, v);
   }
-  for (const [k, v] of (data.gates || []) as [string, Gate][]) {
-    memoryStore.gates.set(k, v);
-  }
+
+  enforceSingleGate();
 
   if (Array.isArray(data.accessLogs)) {
     const logMap = new Map<string, AccessLog>();
-    for (const l of memoryStore.accessLogs) logMap.set(l.id, l);
-    for (const l of data.accessLogs) logMap.set(l.id, l);
+    for (const l of memoryStore.accessLogs) {
+      if (!memoryStore.deletedParticipantIds.has(l.participant_id)) logMap.set(l.id, l);
+    }
+    for (const l of data.accessLogs) {
+      if (!memoryStore.deletedParticipantIds.has(l.participant_id)) logMap.set(l.id, l);
+    }
     memoryStore.accessLogs = Array.from(logMap.values()).sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
@@ -195,6 +283,11 @@ function mergeSerializedIntoMemory(data: any) {
 }
 
 export async function saveStoreToDisk(): Promise<void> {
+  // Automatically offload any inline base64 images so master store stays tiny even at 120+ participants
+  for (const p of memoryStore.participants.values()) {
+    await offloadParticipantImages(p);
+  }
+
   const serialized = serializeStore();
   const jsonStr = JSON.stringify(serialized);
 
@@ -317,6 +410,7 @@ export async function loadStoreFromDisk(): Promise<boolean> {
     console.warn("Cloud store pull warning:", err);
   }
 
+  enforceSingleGate();
   return loaded;
 }
 
@@ -329,14 +423,8 @@ export function getNextRegistrationId(): string {
 export function initializeSeedData() {
   if (memoryStore.gates.size > 0) return;
 
-  // Campus Gates
-  const defaultGates: Gate[] = [
-    { id: "gate-main", name: "MAIN GATE", location: "Campus North Entrance / Admin Block", status: "ACTIVE", created_at: new Date().toISOString() },
-    { id: "gate-hostel", name: "HOSTEL GATE", location: "South Campus / Student Residence", status: "ACTIVE", created_at: new Date().toISOString() },
-    { id: "gate-arena", name: "OAT / ARENA GATE", location: "Open Air Theatre & Sports Complex", status: "ACTIVE", created_at: new Date().toISOString() },
-    { id: "gate-back", name: "BACK GATE", location: "East Service Road & Logistics", status: "ACTIVE", created_at: new Date().toISOString() },
-  ];
-  defaultGates.forEach((g) => memoryStore.gates.set(g.id, g));
+  // Single Campus Gate (RGIPT Main Gate)
+  enforceSingleGate();
 
   // Super Admin User (24mc3008@rgipt.ac.in)
   const superAdminUser: User = {
@@ -360,14 +448,14 @@ export function initializeSeedData() {
     mobile: "+919876543211",
     role: "SECURITY_OPERATOR",
     status: "ACTIVE",
-    full_name: "Security Guard (RGIPT Gate)",
+    full_name: "Security Guard (RGIPT Main Gate)",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
   memoryStore.users.set(secUser.id, secUser);
 
   // Demo Participant 1 (Approved with active single static QR pass)
-  const p1Token = "demo-approved-qr-token-secret-123456";
+  const p1Token = "KLT26-000421";
   const p1Hash = hashToken(p1Token);
   const p1RegId = "KLT26-000421";
   const p1Id = "part-1";

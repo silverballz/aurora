@@ -11,20 +11,19 @@ import {
   Mail,
   Menu,
   Shield,
-  ShieldAlert,
   Users,
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Brand } from "./aurora-shell";
+import { Brand, SponsorsShowcase } from "./aurora-shell";
 
 const adminNav = [
   { label: "Overview", href: "/admin", icon: BarChart3 },
   { label: "Verification queue", href: "/admin/verification", icon: Clock },
   { label: "QR emails & SMTP", href: "/admin/invitations", icon: Mail },
-  { label: "Participants", href: "/admin/participants", icon: Users },
+  { label: "Participants (CRUD)", href: "/admin/participants", icon: Users },
   { label: "Access activity", href: "/admin/activity", icon: CheckSquare },
   { label: "Live occupancy", href: "/admin/occupancy", icon: Shield },
   { label: "Reports & exports", href: "/admin/reports", icon: Download },
@@ -75,7 +74,7 @@ export function StaffShell({
           <div>
             <Brand />
             <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-primary/20 text-primary-foreground text-[10px] font-bold uppercase tracking-widest">
-              Staff Console
+              Staff Console · RGIPT
             </div>
           </div>
           <Button
@@ -119,7 +118,7 @@ export function StaffShell({
               <Link href="/register">Registration Form</Link>
             </Button>
             <Button asChild size="sm" className="w-full text-xs bg-primary hover:bg-primary/90">
-              <Link href="/security">Gate Scanner</Link>
+              <Link href="/security">Main Gate Scanner</Link>
             </Button>
           </div>
           <Button
@@ -137,17 +136,23 @@ export function StaffShell({
       </aside>
 
       {/* Main Content Area */}
-      <main className="min-w-0 flex-1">
-        <header className="flex flex-col gap-4 border-b border-border bg-card/40 px-6 py-6 sm:px-10 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="section-label text-primary">Kaltarang 2026 · Administration</p>
-            <h1 className="mt-1 font-display text-3xl sm:text-4xl">{title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-          </div>
-          {action && <div className="flex items-center gap-3">{action}</div>}
-        </header>
+      <main className="min-w-0 flex-1 flex flex-col justify-between">
+        <div>
+          <header className="flex flex-col gap-4 border-b border-border bg-card/40 px-6 py-6 sm:px-10 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="section-label text-primary">Kaltarang 2026 · RGIPT Administration</p>
+              <h1 className="mt-1 font-display text-3xl sm:text-4xl">{title}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+            </div>
+            {action && <div className="flex items-center gap-3">{action}</div>}
+          </header>
 
-        <div className="p-6 sm:p-8 lg:p-10">{children}</div>
+          <div className="p-6 sm:p-8 lg:p-10">{children}</div>
+        </div>
+
+        <div className="px-6 sm:px-8 lg:px-10 pb-8">
+          <SponsorsShowcase />
+        </div>
       </main>
     </div>
   );

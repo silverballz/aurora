@@ -139,11 +139,21 @@ export function AuroraShell({
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-      <img
-        src="/kaltarang-logo.svg"
-        alt="Kaltarang"
-        className={compact ? "h-9 w-7 object-contain" : "h-12 w-9 object-contain"}
-      />
+      <div className="flex items-center gap-2">
+        <img
+          src="/sponsors/rgipt-logo.jpg"
+          alt="RGIPT Logo"
+          className={cn(
+            "rounded-full bg-white p-0.5 object-contain shadow-sm",
+            compact ? "size-8" : "size-10"
+          )}
+        />
+        <img
+          src="/kaltarang-logo.svg"
+          alt="Kaltarang"
+          className={compact ? "h-8 w-6 object-contain" : "h-10 w-8 object-contain"}
+        />
+      </div>
       <div>
         <p className="font-display text-2xl leading-none tracking-tight">Aurora</p>
         {!compact && (
@@ -153,6 +163,113 @@ export function Brand({ compact = false }: { compact?: boolean }) {
         )}
       </div>
     </Link>
+  );
+}
+
+export function SponsorsShowcase({ dark = false }: { dark?: boolean }) {
+  const bankSponsors = [
+    { name: "HDFC Bank", src: "/sponsors/hdfc-bank.png" },
+    { name: "Canara Bank", src: "/sponsors/canara-bank.png" },
+    { name: "YES Bank", src: "/sponsors/yes-bank.png" },
+    { name: "Bank of Baroda", src: "/sponsors/bob.png" },
+    { name: "Punjab & Sind Bank", src: "/sponsors/psb.png" },
+  ];
+
+  return (
+    <section
+      className={cn(
+        "rounded-2xl border p-6 sm:p-8 space-y-8",
+        dark
+          ? "bg-security-panel border-security-border text-white"
+          : "surface border-border bg-card/80 text-foreground"
+      )}
+    >
+      {/* Top Row: Host Institute RGIPT + Platinum Sponsor Gruner Renewable Energy */}
+      <div className="grid gap-6 md:grid-cols-2 items-stretch">
+        {/* Host Institute RGIPT */}
+        <div
+          className={cn(
+            "flex flex-col sm:flex-row items-center gap-5 rounded-xl border p-5",
+            dark ? "border-security-border bg-black/30" : "border-border bg-background"
+          )}
+        >
+          <div className="size-20 rounded-xl bg-white p-2 shadow-sm border border-border/40 shrink-0 flex items-center justify-center">
+            <img
+              src="/sponsors/rgipt-logo.jpg"
+              alt="Rajiv Gandhi Institute of Petroleum Technology (RGIPT)"
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+          <div className="text-center sm:text-left">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest">
+              Host Institute · An Institute of National Importance
+            </span>
+            <h3 className="font-display text-xl sm:text-2xl font-bold mt-1.5">
+              Rajiv Gandhi Institute of Petroleum Technology
+            </h3>
+            <p className={cn("text-xs mt-0.5", dark ? "text-security-muted" : "text-muted-foreground")}>
+              Jais, Amethi · Host of Kaltarang 2026 Annual Cultural &amp; Sports Fest
+            </p>
+          </div>
+        </div>
+
+        {/* Platinum Sponsor: Gruner Renewable Energy */}
+        <div
+          className={cn(
+            "flex flex-col sm:flex-row items-center gap-5 rounded-xl border-2 border-primary/50 p-5",
+            dark ? "bg-primary/10" : "bg-primary/5"
+          )}
+        >
+          <div className="h-20 w-44 rounded-xl bg-white px-4 py-2 shadow-sm border border-primary/30 shrink-0 flex items-center justify-center">
+            <img
+              src="/sponsors/gruner-logo.png"
+              alt="Gruner Renewable Energy — Platinum Sponsor"
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+          <div className="text-center sm:text-left">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-widest shadow-xs">
+              ★ Platinum Sponsor · Kaltarang 2026
+            </span>
+            <h3 className="font-display text-xl sm:text-2xl font-bold mt-1.5">
+              Gruner Renewable Energy
+            </h3>
+            <p className={cn("text-xs mt-0.5", dark ? "text-security-muted" : "text-muted-foreground")}>
+              Official Platinum Sponsor of Kaltarang 2026 at RGIPT
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Row: Official Banking Sponsors */}
+      <div className={cn("pt-6 border-t", dark ? "border-security-border" : "border-border")}>
+        <p
+          className={cn(
+            "text-center text-[11px] font-bold uppercase tracking-[0.22em] mb-5",
+            dark ? "text-security-muted" : "text-muted-foreground"
+          )}
+        >
+          Official Sponsors · Kaltarang 2026
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 items-center">
+          {bankSponsors.map((sp) => (
+            <div
+              key={sp.name}
+              className="h-20 rounded-xl bg-white p-3 border border-border/60 shadow-xs flex flex-col items-center justify-center gap-1 hover:border-primary/50 transition-all"
+            >
+              <img
+                src={sp.src}
+                alt={sp.name}
+                className="max-h-11 max-w-[130px] object-contain"
+              />
+              <span className="text-[10px] font-semibold text-neutral-600 truncate max-w-full">
+                {sp.name}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

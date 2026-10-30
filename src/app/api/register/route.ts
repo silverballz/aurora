@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { memoryStore, loadStoreFromDisk, saveStoreToDisk } from "@/lib/data/store";
+import {
+  memoryStore,
+  loadStoreFromDisk,
+  saveStoreToDisk,
+  offloadParticipantImages,
+} from "@/lib/data/store";
 import { Participant } from "@/lib/types/database";
 import { logAuditEvent } from "@/lib/audit/logger";
 
@@ -38,7 +43,12 @@ export async function POST(request: Request) {
       }
     }
 
-    const participantId = existingParticipant?.id || `part-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const participantId =
+      existingParticipant?.id ||
+      `part-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    // Ensure if previously deleted, we allow re-registration
+    memoryStore.deletedParticipantIds.delete(participantId);
 
     const participant: Participant = {
       id: participantId,
@@ -55,9 +65,14 @@ export async function POST(request: Request) {
       city: "",
       state: "",
       pincode: "",
-      selfie_path: selfie_data_url || existingParticipant?.selfie_path || "/assets/participant-avatar.jpg",
-      student_id_path: student_id_data_url || existingParticipant?.student_id_path || null,
-      aadhaar_path: aadhaar_data_url || existingParticipant?.aadhaar_path || null,
+      selfie_path:
+        selfie_data_url ||
+        existingParticipant?.selfie_path ||
+        "/assets/participant-avatar.jpg",
+      student_id_path:
+        student_id_data_url || existingParticipant?.student_id_path || null,
+      aadhaar_path:
+        aadhaar_data_url || existingParticipant?.aadhaar_path || null,
       payment_reference: "N/A",
       qr_token: existingParticipant?.qr_token || null,
       qr_data_url: existingParticipant?.qr_data_url || null,
@@ -72,6 +87,9 @@ export async function POST(request: Request) {
       approved_by: existingParticipant?.approved_by || null,
     };
 
+    // Offload base64 images to dedicated cloud blob so 120+ participants never hit payload limits
+    await offloadParticipantImages(participant);
+
     memoryStore.participants.set(participantId, participant);
 
     if (student_id_data_url || student_id_filename) {
@@ -80,7 +98,8 @@ export async function POST(request: Request) {
         id: docId,
         participant_id: participantId,
         document_type: "STUDENT_ID",
-        storage_path: student_id_data_url || `participants/${participantId}/student_id`,
+        storage_path:
+          participant.student_id_path || `participants/${participantId}/student_id`,
         original_filename: student_id_filename || "student_id.jpg",
         mime_type: "image/jpeg",
         file_size: student_id_data_url ? student_id_data_url.length : 102400,
@@ -97,7 +116,8 @@ export async function POST(request: Request) {
         id: docId,
         participant_id: participantId,
         document_type: "AADHAAR",
-        storage_path: aadhaar_data_url || `participants/${participantId}/aadhaar`,
+        storage_path:
+          participant.aadhaar_path || `participants/${participantId}/aadhaar`,
         original_filename: aadhaar_filename || "aadhaar.jpg",
         mime_type: "image/jpeg",
         file_size: aadhaar_data_url ? aadhaar_data_url.length : 102400,
@@ -125,7 +145,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       participant_id: participantId,
-      message: "Registration submitted! After admin review, your single static QR pass will be emailed to you.",
+      message:
+        "Registration submitted! After admin review, your single static QR pass will be emailed to you.",
     });
   } catch (error) {
     console.error("Registration error:", error);

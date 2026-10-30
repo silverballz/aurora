@@ -7,13 +7,16 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  Edit3,
   ExternalLink,
   FileSearch,
   Mail,
+  Plus,
   QrCode,
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { StaffShell } from "@/components/staff-shell";
@@ -39,6 +42,16 @@ export default function AdminVerificationPage() {
   // Reject Modal
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+
+  // CRUD Edit / Create Modal
+  const [crudModalOpen, setCrudModalOpen] = useState(false);
+  const [crudMode, setCrudMode] = useState<"CREATE" | "EDIT">("EDIT");
+  const [editFullName, setEditFullName] = useState("");
+  const [editCollege, setEditCollege] = useState("");
+  const [editMobile, setEditMobile] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editStatus, setEditStatus] = useState("APPROVED");
+  const [editCampusStatus, setEditCampusStatus] = useState("OUTSIDE");
 
   // Inline SMTP Quick-Setup Modal
   const [smtpModalOpen, setSmtpModalOpen] = useState(false);
@@ -120,6 +133,97 @@ export default function AdminVerificationPage() {
 
   const selectedParticipant = participants.find((p) => p.id === selectedId) || participants[0];
 
+  const openCreateModal = () => {
+    setCrudMode("CREATE");
+    setEditFullName("");
+    setEditCollege("");
+    setEditMobile("");
+    setEditEmail("");
+    setEditStatus("APPROVED");
+    setEditCampusStatus("OUTSIDE");
+    setCrudModalOpen(true);
+  };
+
+  const openEditModal = () => {
+    if (!selectedParticipant) return;
+    setCrudMode("EDIT");
+    setEditFullName(selectedParticipant.full_name || "");
+    setEditCollege(selectedParticipant.college || "");
+    setEditMobile(selectedParticipant.mobile || "");
+    setEditEmail(selectedParticipant.email || "");
+    setEditStatus(selectedParticipant.status || "UNDER_REVIEW");
+    setEditCampusStatus(selectedParticipant.campus_status || "OUTSIDE");
+    setCrudModalOpen(true);
+  };
+
+  const handleSaveCrud = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setActionLoading(true);
+      const isEdit = crudMode === "EDIT";
+      const res = await fetch("/api/admin/participants", {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: isEdit ? selectedParticipant?.id : undefined,
+          full_name: editFullName,
+          college: editCollege,
+          mobile: editMobile,
+          email: editEmail,
+          status: editStatus,
+          campus_status: editCampusStatus,
+          send_email: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to save participant.");
+      } else {
+        toast.success(data.message || "Participant saved!");
+        setCrudModalOpen(false);
+        await fetchQueue();
+        if (data.participant?.id) setSelectedId(data.participant.id);
+      }
+    } catch {
+      toast.error("Network error saving participant.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!selectedParticipant) return;
+    if (
+      !window.confirm(
+        `Delete participant "${selectedParticipant.full_name}" (${
+          selectedParticipant.registration_id || selectedParticipant.email
+        }) permanently?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const res = await fetch(
+        `/api/admin/participants?id=${encodeURIComponent(selectedParticipant.id)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Delete failed.");
+      } else {
+        toast.success(data.message || "Deleted participant.");
+        setSelectedId(null);
+        await fetchQueue();
+      }
+    } catch {
+      toast.error("Network error deleting participant.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleApprove = async (resend = false) => {
     if (!selectedParticipant) return;
     try {
@@ -134,7 +238,10 @@ export default function AdminVerificationPage() {
       if (!res.ok) {
         toast.error(data.error || "Approval failed.");
       } else {
-        toast.success(data.message || `Approved! QR Pass (${data.registration_id}) emailed to ${selectedParticipant.email}`);
+        toast.success(
+          data.message ||
+            `Approved! QR Pass (${data.registration_id}) emailed to ${selectedParticipant.email}`
+        );
         await fetchQueue();
         setSelectedId(selectedParticipant.id);
       }
@@ -210,9 +317,16 @@ export default function AdminVerificationPage() {
   return (
     <StaffShell
       title="Participant Verification & QR Issuance"
-      subtitle="Review submitted registrations, inspect documents, and generate & email each participant's single static QR pass"
+      subtitle="Review submitted registrations, inspect documents, manage CRUD records, and email static QR passes"
       action={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            onClick={openCreateModal}
+            className="bg-primary hover:bg-primary/90 text-xs"
+          >
+            <Plus className="size-3.5 mr-1.5" /> Add Participant
+          </Button>
           <Button
             size="sm"
             variant={smtpReady ? "outline" : "default"}
@@ -266,7 +380,7 @@ export default function AdminVerificationPage() {
         <section className="surface divide-y divide-border overflow-hidden max-h-[800px] overflow-y-auto">
           {participants.length === 0 ? (
             <div className="p-8 text-center text-xs text-muted-foreground">
-              No participants found in this category.
+              {loading ? "Loading queue..." : "No participants found in this category."}
             </div>
           ) : (
             participants.map((p) => {
@@ -346,9 +460,18 @@ export default function AdminVerificationPage() {
                   </div>
                 </div>
 
-                <div className="text-right text-xs bg-muted/50 p-2.5 rounded-md border border-border">
-                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wider">College</span>
-                  <span className="font-semibold">{selectedParticipant.college || "—"}</span>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={openEditModal} className="text-xs">
+                    <Edit3 className="size-3.5 mr-1" /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleDeleteSelected}
+                    className="text-xs"
+                  >
+                    <Trash2 className="size-3.5 mr-1" /> Delete
+                  </Button>
                 </div>
               </div>
 
@@ -432,8 +555,7 @@ export default function AdminVerificationPage() {
                       <CheckCircle2 className="size-3" /> Attached
                     </span>
                   </div>
-                  {selectedParticipant.student_id_path &&
-                  selectedParticipant.student_id_path.startsWith("data:image") ? (
+                  {selectedParticipant.student_id_path ? (
                     <div
                       onClick={() =>
                         setPreviewImage({
@@ -473,8 +595,7 @@ export default function AdminVerificationPage() {
                       <CheckCircle2 className="size-3" /> Attached
                     </span>
                   </div>
-                  {selectedParticipant.aadhaar_path &&
-                  selectedParticipant.aadhaar_path.startsWith("data:image") ? (
+                  {selectedParticipant.aadhaar_path ? (
                     <div
                       onClick={() =>
                         setPreviewImage({
@@ -591,6 +712,98 @@ export default function AdminVerificationPage() {
             <div className="max-h-[75vh] overflow-auto grid place-items-center bg-black/10 rounded p-2">
               <img src={previewImage.url} alt={previewImage.title} className="max-h-[70vh] object-contain" />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CRUD Edit / Create Modal */}
+      {crudModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="surface max-w-lg w-full p-6 space-y-4">
+            <h3 className="font-display text-2xl font-bold">
+              {crudMode === "EDIT" ? "Edit Participant Record" : "Add New Participant"}
+            </h3>
+            <form onSubmit={handleSaveCrud} className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Full Name *
+                  </label>
+                  <Input
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    College Name *
+                  </label>
+                  <Input
+                    value={editCollege}
+                    onChange={(e) => setEditCollege(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Mobile Number *
+                  </label>
+                  <Input
+                    value={editMobile}
+                    onChange={(e) => setEditMobile(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Email Address *
+                  </label>
+                  <Input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
+                  >
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="UNDER_REVIEW">UNDER REVIEW</option>
+                    <option value="CORRECTION">CORRECTION</option>
+                    <option value="REVOKED">REVOKED</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Campus State
+                  </label>
+                  <select
+                    value={editCampusStatus}
+                    onChange={(e) => setEditCampusStatus(e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
+                  >
+                    <option value="OUTSIDE">OUTSIDE CAMPUS</option>
+                    <option value="INSIDE">INSIDE CAMPUS</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setCrudModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={actionLoading} className="bg-primary text-primary-foreground">
+                  {actionLoading ? "Saving..." : "Save Participant"}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

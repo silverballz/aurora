@@ -14,22 +14,24 @@ export async function GET() {
   const todayStr = new Date().toISOString().split("T")[0];
   const todayLogs = memoryStore.accessLogs.filter((log) => log.timestamp.startsWith(todayStr));
 
-  const entriesToday = todayLogs.filter((log) => log.action === "ENTRY" && log.result === "ALLOWED").length;
-  const exitsToday = todayLogs.filter((log) => log.action === "EXIT" && log.result === "ALLOWED").length;
+  const entriesToday = todayLogs.filter(
+    (log) => log.action === "ENTRY" && log.result === "ALLOWED"
+  ).length;
+  const exitsToday = todayLogs.filter(
+    (log) => log.action === "EXIT" && log.result === "ALLOWED"
+  ).length;
 
-  // Gate breakdown
-  const gateBreakdown = Array.from(memoryStore.gates.values()).map((gate) => {
-    const gateEntries = todayLogs.filter((log) => log.gate_id === gate.id && log.action === "ENTRY" && log.result === "ALLOWED").length;
-    const gateExits = todayLogs.filter((log) => log.gate_id === gate.id && log.action === "EXIT" && log.result === "ALLOWED").length;
-    return {
-      gateId: gate.id,
-      gateName: gate.name,
-      location: gate.location,
-      entriesToday: gateEntries,
-      exitsToday: gateExits,
-      netMovement: gateEntries - gateExits,
-    };
-  });
+  // Single Gate breakdown (RGIPT Main Gate)
+  const gateBreakdown = [
+    {
+      gateId: "gate-main",
+      gateName: "RGIPT MAIN GATE",
+      location: "Rajiv Gandhi Institute of Petroleum Technology · Main Campus Entrance",
+      entriesToday,
+      exitsToday,
+      netMovement: entriesToday - exitsToday,
+    },
+  ];
 
   return NextResponse.json({
     currentlyInside,

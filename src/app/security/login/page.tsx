@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Camera, KeyRound, Lock, UserCheck } from "lucide-react";
+import { KeyRound, Lock, ShieldCheck, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -11,7 +11,6 @@ import { toast } from "sonner";
 export default function SecurityLoginPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState("");
-  const [gate, setGate] = useState("gate-main");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -31,7 +30,7 @@ export default function SecurityLoginPage() {
           identifier: identifier.trim(),
           password,
           role: "GUARD",
-          gate,
+          gate: "gate-main",
         }),
       });
       const data = await res.json();
@@ -42,11 +41,11 @@ export default function SecurityLoginPage() {
       }
 
       try {
-        localStorage.setItem("aurora_gate_id", gate);
+        localStorage.setItem("aurora_gate_id", "gate-main");
         localStorage.setItem("aurora_operator_code", identifier.trim());
       } catch {}
 
-      toast.success(`Authenticated at ${gate.toUpperCase()}!`);
+      toast.success("Authenticated at RGIPT Main Gate!");
       router.push("/security");
       router.refresh();
     } catch {
@@ -59,38 +58,45 @@ export default function SecurityLoginPage() {
   return (
     <div className="min-h-screen bg-security text-security-foreground flex flex-col justify-center items-center p-6">
       <div className="max-w-md w-full surface bg-security-panel border-security-border p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <img src="/kaltarang-logo.svg" alt="Kaltarang Logo" className="h-9 w-7 object-contain" />
-          <div>
-            <h1 className="font-display text-2xl leading-none text-white">Aurora Gate</h1>
-            <p className="text-[10px] uppercase tracking-widest text-security-muted mt-0.5">
-              Campus Security Console
-            </p>
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/sponsors/rgipt-logo.jpg"
+              alt="RGIPT Logo"
+              className="size-10 rounded-full bg-white p-0.5 object-contain"
+            />
+            <img src="/kaltarang-logo.svg" alt="Kaltarang Logo" className="h-9 w-7 object-contain" />
+            <div>
+              <h1 className="font-display text-2xl leading-none text-white">Aurora Gate</h1>
+              <p className="text-[10px] uppercase tracking-widest text-security-muted mt-0.5">
+                RGIPT Main Security Gate
+              </p>
+            </div>
+          </div>
+          <div className="h-8 px-2.5 rounded bg-white flex items-center">
+            <img
+              src="/sponsors/gruner-logo.png"
+              alt="Gruner Renewable Energy"
+              className="h-5 object-contain"
+            />
           </div>
         </div>
 
         <div className="border-b border-security-border pb-5 mb-5">
           <h2 className="font-display text-3xl text-white">Security Guard Login</h2>
           <p className="text-xs text-security-muted mt-1.5 leading-relaxed">
-            Authorized RGIPT gate security personnel only. Select your assigned entrance and sign in.
+            Authorized RGIPT Main Gate security personnel only. Sign in to launch the continuous QR check-in/check-out scanner.
           </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-security-muted block mb-1.5">
-              Assigned Campus Gate
-            </label>
-            <select
-              value={gate}
-              onChange={(e) => setGate(e.target.value)}
-              className="w-full h-11 px-3 rounded-md bg-security border border-security-border text-white text-sm outline-none cursor-pointer"
-            >
-              <option value="gate-main">MAIN GATE (North / Admin Entrance)</option>
-              <option value="gate-hostel">HOSTEL GATE (South / Residence Entrance)</option>
-              <option value="gate-arena">OAT / ARENA GATE (Festival Ground)</option>
-              <option value="gate-back">BACK GATE (East Service)</option>
-            </select>
+          <div className="p-3 rounded-md bg-security border border-security-border flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-security-muted">
+              Campus Checkpoint
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-primary">
+              <ShieldCheck className="size-4" /> RGIPT MAIN GATE
+            </span>
           </div>
 
           <div>
@@ -134,7 +140,7 @@ export default function SecurityLoginPage() {
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-12 font-semibold text-base mt-2"
           >
             <Lock className="size-4 mr-2" />
-            {loading ? "Signing In..." : "Sign In & Launch Scanner"}
+            {loading ? "Signing In..." : "Sign In & Launch Main Gate Scanner"}
           </Button>
         </form>
 

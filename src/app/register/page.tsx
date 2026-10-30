@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SponsorsShowcase } from "@/components/aurora-shell";
 import { toast } from "sonner";
 
 function compressImageToDataUrl(file: File): Promise<string> {
@@ -30,7 +31,7 @@ function compressImageToDataUrl(file: File): Promise<string> {
     reader.onload = (ev) => {
       const img = new Image();
       img.onload = () => {
-        const maxDim = 1000;
+        const maxDim = 900;
         let { width, height } = img;
         if (width > maxDim || height > maxDim) {
           if (width > height) {
@@ -50,7 +51,7 @@ function compressImageToDataUrl(file: File): Promise<string> {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.8));
+        resolve(canvas.toDataURL("image/jpeg", 0.78));
       };
       img.onerror = () => resolve(String(ev.target?.result));
       img.src = String(ev.target?.result);
@@ -124,7 +125,7 @@ export default function PublicRegistrationPage() {
     if (!ctx) return;
 
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
     setSelfieDataUrl(dataUrl);
     stopCamera();
     toast.success("Live photo captured!");
@@ -183,24 +184,41 @@ export default function PublicRegistrationPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
       <header className="border-b border-border bg-card/60 backdrop-blur-md px-6 py-4 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-3">
+            <img
+              src="/sponsors/rgipt-logo.jpg"
+              alt="RGIPT Logo"
+              className="size-10 rounded-full bg-white p-0.5 object-contain border border-border"
+            />
             <img src="/kaltarang-logo.svg" alt="Kaltarang Logo" className="h-9 w-7 object-contain" />
             <div>
               <span className="font-display text-2xl tracking-tight leading-none block">Aurora</span>
               <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-muted-foreground">
-                Kaltarang 2026 · Participant Registration
+                Kaltarang 2026 · RGIPT Registration
               </span>
             </div>
           </Link>
 
-          <Button asChild variant="outline" size="sm" className="text-xs">
-            <Link href="/">← Home</Link>
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 bg-white px-2.5 py-1 rounded border border-primary/30">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-primary">
+                Platinum Sponsor
+              </span>
+              <img
+                src="/sponsors/gruner-logo.png"
+                alt="Gruner Renewable Energy"
+                className="h-5 object-contain"
+              />
+            </div>
+            <Button asChild variant="outline" size="sm" className="text-xs">
+              <Link href="/">← Home</Link>
+            </Button>
+          </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-10 sm:py-12">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-5 py-10 sm:py-12 space-y-10">
         {submitted ? (
           <div className="surface p-8 sm:p-12 text-center space-y-6 animate-in fade-in duration-300">
             <div className="size-16 rounded-full bg-success/15 text-success grid place-items-center mx-auto">
@@ -211,7 +229,7 @@ export default function PublicRegistrationPage() {
               <p className="section-label text-success">Submission Received</p>
               <h1 className="font-display text-4xl sm:text-5xl">Registration Under Admin Review</h1>
               <p className="text-sm text-muted-foreground max-w-xl mx-auto leading-relaxed pt-2">
-                Thank you, <strong>{fullName}</strong>. Your details, live photograph, Student ID, and Aadhaar have been submitted to the Kaltarang 2026 Verification Desk.
+                Thank you, <strong>{fullName}</strong>. Your details, live photograph, Student ID, and Aadhaar have been submitted to the Kaltarang 2026 Verification Desk at RGIPT.
               </p>
             </div>
 
@@ -226,7 +244,7 @@ export default function PublicRegistrationPage() {
                 {email}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                Show that QR code at any RGIPT campus gate for entry and exit.
+                Show that QR code at the RGIPT Main Gate for campus entry and exit.
               </p>
             </div>
 
@@ -252,7 +270,7 @@ export default function PublicRegistrationPage() {
           <div className="space-y-8">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider mb-3">
-                <Sparkles className="size-3.5" /> Official Participant Registration
+                <Sparkles className="size-3.5" /> Official Participant Registration · RGIPT
               </div>
               <h1 className="font-display text-4xl sm:text-5xl">Kaltarang 2026 Campus Pass Registration</h1>
               <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
@@ -327,7 +345,7 @@ export default function PublicRegistrationPage() {
                   <p className="section-label text-primary">Step 2 of 3</p>
                   <h2 className="font-display text-2xl mt-1">Live Photo (Selfie) *</h2>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Security guards at the gate will match your face with this live photo when scanning your QR code.
+                    Security guards at the RGIPT Main Gate will match your face with this live photo when scanning your QR code.
                   </p>
                 </div>
 
@@ -413,7 +431,7 @@ export default function PublicRegistrationPage() {
               <section className="surface p-6 sm:p-8 space-y-5">
                 <div className="border-b border-border pb-3">
                   <p className="section-label text-primary">Step 3 of 3</p>
-                  <h2 className="font-display text-2xl mt-1">Student ID & Aadhaar Photos *</h2>
+                  <h2 className="font-display text-2xl mt-1">Student ID &amp; Aadhaar Photos *</h2>
                   <p className="text-xs text-muted-foreground mt-1">
                     Upload clear photos of your College Student ID and Aadhaar Card for admin verification.
                   </p>
@@ -509,6 +527,9 @@ export default function PublicRegistrationPage() {
             </form>
           </div>
         )}
+
+        {/* Sponsors Showcase at bottom of Registration Page */}
+        <SponsorsShowcase />
       </main>
     </div>
   );

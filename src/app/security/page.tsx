@@ -2,27 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle,
   Camera,
   CheckCircle2,
-  KeyRound,
   LogIn,
   LogOut,
   QrCode,
   RefreshCw,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Upload,
-  UserCheck,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SponsorsShowcase } from "@/components/aurora-shell";
 import { toast } from "sonner";
 
+const MAIN_GATE_ID = "gate-main";
+
 export default function SecurityGatePage() {
-  const [selectedGate, setSelectedGate] = useState("gate-main");
-  const [operatorCode, setOperatorCode] = useState("SEC-014 (Gate Guard)");
+  const [operatorCode, setOperatorCode] = useState("RGIPT Main Gate Guard");
   const [occupancy, setOccupancy] = useState<any>(null);
   const [approvedList, setApprovedList] = useState<any[]>([]);
   const [rosterSearch, setRosterSearch] = useState("");
@@ -36,12 +35,6 @@ export default function SecurityGatePage() {
   const [scannedResult, setScannedResult] = useState<any>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-
-  // Supervisor Override Modal
-  const [overrideModalOpen, setOverrideModalOpen] = useState(false);
-  const [overrideAction, setOverrideAction] = useState<"ENTRY" | "EXIT">("ENTRY");
-  const [overridePin, setOverridePin] = useState("");
-  const [overrideReason, setOverrideReason] = useState("");
 
   const html5QrCodeRef = useRef<any>(null);
   const scanLockRef = useRef(false);
@@ -66,10 +59,8 @@ export default function SecurityGatePage() {
 
   useEffect(() => {
     try {
-      const savedGate = localStorage.getItem("aurora_gate_id");
       const savedOp = localStorage.getItem("aurora_operator_code");
-      if (savedGate) setSelectedGate(savedGate);
-      if (savedOp) setOperatorCode(`${savedOp} (Gate Guard)`);
+      if (savedOp) setOperatorCode(`${savedOp} · RGIPT Main Gate`);
     } catch {}
 
     fetchStatsAndRoster();
@@ -101,8 +92,10 @@ export default function SecurityGatePage() {
   // Real Live QR Scanner using html5-qrcode with automatic camera fallback
   const startCamera = async () => {
     try {
+      await stopCamera();
       setScanError(null);
       setScannedResult(null);
+      setManualToken("");
       scanLockRef.current = false;
       setScanning(true);
 
@@ -155,12 +148,26 @@ export default function SecurityGatePage() {
     }
   };
 
+  /**
+   * Automatically returns to the main scanner menu ("purana menu khul jaye")
+   * and restarts the camera immediately to scan the next QR pass!
+   */
+  const returnToScannerAndRestartCamera = () => {
+    setScannedResult(null);
+    setScanError(null);
+    setManualToken("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => {
+      startCamera();
+    }, 150);
+  };
+
   const handleScanImageFile = async (file: File) => {
     try {
       setEvaluating(true);
       setScanError(null);
 
-      // 1. Try native BarcodeDetector first if supported (instant on Chrome/Android/macOS)
+      // 1. Try native BarcodeDetector first if supported
       if (typeof window !== "undefined" && "BarcodeDetector" in window) {
         try {
           const BarcodeDetectorClass = (window as any).BarcodeDetector;
@@ -205,7 +212,7 @@ export default function SecurityGatePage() {
       const res = await fetch("/api/security/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: clean, gate_id: selectedGate }),
+        body: JSON.stringify({ token: clean, gate_id: MAIN_GATE_ID }),
       });
       const data = await res.json();
 
@@ -223,8 +230,8 @@ export default function SecurityGatePage() {
     }
   };
 
-  // ALLOW ENTRY (Check-In)
-  const handleAllowEntry = async (force = false) => {
+  // ALLOW ENTRY (Check-In) -> Auto-return to scanner & auto-restart camera
+  const handleAllowEntry = async () => {
     if (!scannedResult?.participant) return;
     try {
       setActionLoading(true);
@@ -234,38 +241,19 @@ export default function SecurityGatePage() {
         body: JSON.stringify({
           participant_id: scannedResult.participant.id,
           participant_snapshot: scannedResult.participant,
-          gate_id: selectedGate,
+          gate_id: MAIN_GATE_ID,
           operator_id: "usr-sec-1",
-          force,
+          force: true,
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
         toast.error(data.message || data.error || "Entry blocked!");
-        if (data.blocked) {
-          setScanError(data.message);
-          setScannedResult((prev: any) =>
-            prev
-              ? {
-                  ...prev,
-                  participant: { ...prev.participant, campus_status: "INSIDE" },
-                }
-              : prev
-          );
-        }
       } else {
-        setScanError(null);
-        toast.success(data.message);
-        setScannedResult((prev: any) =>
-          prev
-            ? {
-                ...prev,
-                participant: { ...prev.participant, campus_status: "INSIDE" },
-              }
-            : prev
-        );
+        toast.success(`✓ CHECKED IN: ${scannedResult.participant.full_name} — Ready for next QR!`);
         fetchStatsAndRoster();
+        returnToScannerAndRestartCamera();
       }
     } catch {
       toast.error("Network error executing entry.");
@@ -274,8 +262,8 @@ export default function SecurityGatePage() {
     }
   };
 
-  // ALLOW EXIT (Check-Out)
-  const handleAllowExit = async (force = false) => {
+  // ALLOW EXIT (Check-Out) -> Auto-return to scanner & auto-restart camera
+  const handleAllowExit = async () => {
     if (!scannedResult?.participant) return;
     try {
       setActionLoading(true);
@@ -285,38 +273,19 @@ export default function SecurityGatePage() {
         body: JSON.stringify({
           participant_id: scannedResult.participant.id,
           participant_snapshot: scannedResult.participant,
-          gate_id: selectedGate,
+          gate_id: MAIN_GATE_ID,
           operator_id: "usr-sec-1",
-          force,
+          force: true,
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
         toast.error(data.message || data.error || "Exit blocked!");
-        if (data.blocked) {
-          setScanError(data.message);
-          setScannedResult((prev: any) =>
-            prev
-              ? {
-                  ...prev,
-                  participant: { ...prev.participant, campus_status: "OUTSIDE" },
-                }
-              : prev
-          );
-        }
       } else {
-        setScanError(null);
-        toast.success(data.message);
-        setScannedResult((prev: any) =>
-          prev
-            ? {
-                ...prev,
-                participant: { ...prev.participant, campus_status: "OUTSIDE" },
-              }
-            : prev
-        );
+        toast.success(`✓ CHECKED OUT: ${scannedResult.participant.full_name} — Ready for next QR!`);
         fetchStatsAndRoster();
+        returnToScannerAndRestartCamera();
       }
     } catch {
       toast.error("Network error executing exit.");
@@ -336,7 +305,7 @@ export default function SecurityGatePage() {
         body: JSON.stringify({
           participant_id: p.id,
           participant_snapshot: p,
-          gate_id: selectedGate,
+          gate_id: MAIN_GATE_ID,
           operator_id: "usr-sec-1",
           force: true,
         }),
@@ -344,60 +313,12 @@ export default function SecurityGatePage() {
       const data = await res.json();
       if (res.ok) {
         toast.success(data.message);
-        setScannedResult({
-          valid: true,
-          participant: {
-            ...p,
-            campus_status: data.campus_status,
-          },
-        });
         fetchStatsAndRoster();
       } else {
         toast.error(data.message || data.error || "Action failed");
       }
     } catch {
       toast.error("Network error.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // SUPERVISOR OVERRIDE SUBMIT
-  const handleOverrideSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scannedResult?.participant || !overridePin || !overrideReason) return;
-
-    try {
-      setActionLoading(true);
-      const res = await fetch("/api/security/override", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          participant_id: scannedResult.participant.id,
-          action: overrideAction,
-          reason: overrideReason,
-          supervisor_pin: overridePin,
-          gate_id: selectedGate,
-        }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.error || "Override authorization rejected.");
-      } else {
-        toast.success(data.message);
-        setOverrideModalOpen(false);
-        setOverridePin("");
-        setOverrideReason("");
-        setScannedResult((prev: any) => ({
-          ...prev,
-          participant: { ...prev.participant, campus_status: data.campus_status },
-        }));
-        setScanError(null);
-        fetchStatsAndRoster();
-      }
-    } catch {
-      toast.error("Override network error.");
     } finally {
       setActionLoading(false);
     }
@@ -425,12 +346,17 @@ export default function SecurityGatePage() {
         className="fixed -left-[9999px] top-0 w-[360px] h-[360px] overflow-hidden opacity-0 pointer-events-none"
       />
 
-      {/* High-Contrast Gate Header */}
-      <header className="flex items-center justify-between border-b border-security-border px-5 py-4 sm:px-8 bg-security-panel">
+      {/* High-Contrast Single Gate Header */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-security-border px-5 py-4 sm:px-8 bg-security-panel">
         <div className="flex items-center gap-3">
-          <img src="/kaltarang-logo.svg" alt="Kaltarang Logo" className="h-10 w-8 object-contain" />
+          <img
+            src="/sponsors/rgipt-logo.jpg"
+            alt="RGIPT Logo"
+            className="size-10 rounded-full bg-white p-0.5 object-contain"
+          />
+          <img src="/kaltarang-logo.svg" alt="Kaltarang Logo" className="h-9 w-7 object-contain" />
           <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">Aurora Gate Access</h1>
+            <h1 className="font-display text-2xl font-bold tracking-tight">Aurora Gate Scanner</h1>
             <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-security-muted">
               {operatorCode} · Kaltarang 2026
             </p>
@@ -438,16 +364,21 @@ export default function SecurityGatePage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <select
-            value={selectedGate}
-            onChange={(e) => setSelectedGate(e.target.value)}
-            className="bg-security border border-security-border text-xs rounded px-2.5 py-1.5 font-semibold text-security-foreground outline-none cursor-pointer"
-          >
-            <option value="gate-main">MAIN GATE (North / Admin)</option>
-            <option value="gate-hostel">HOSTEL GATE (South)</option>
-            <option value="gate-arena">OAT / ARENA GATE</option>
-            <option value="gate-back">BACK GATE (East Service)</option>
-          </select>
+          <div className="hidden md:flex items-center gap-2 bg-white px-2.5 py-1 rounded border border-security-border">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-700">
+              Platinum Sponsor
+            </span>
+            <img
+              src="/sponsors/gruner-logo.png"
+              alt="Gruner Renewable Energy"
+              className="h-5 object-contain"
+            />
+          </div>
+
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-security border border-security-border text-xs font-bold text-primary">
+            <ShieldCheck className="size-3.5" /> RGIPT MAIN GATE
+          </span>
+
           <span className="hidden sm:inline-block px-2.5 py-1 rounded-full bg-success/20 text-success text-xs font-bold uppercase tracking-wider">
             ● Online
           </span>
@@ -469,17 +400,26 @@ export default function SecurityGatePage() {
       <main className="flex-1 mx-auto grid max-w-6xl w-full gap-8 p-5 sm:p-8 lg:grid-cols-[1.4fr_1fr] lg:py-10">
         {/* Left Column: Scanner, Active Participant Card, and Live Check-In Roster */}
         <section className="space-y-6">
-          {/* SCANNER VIEW */}
+          {/* SCANNER VIEW (Main Menu) */}
           {!scannedResult && (
             <div className="surface bg-security-panel border-security-border p-6 sm:p-8">
-              <p className="section-label text-security-muted">Gate Verification</p>
-              <h2 className="mt-2 font-display text-4xl sm:text-5xl text-white">Scan. Identify. Check-In.</h2>
+              <div className="flex items-center justify-between">
+                <p className="section-label text-security-muted">RGIPT Main Gate · Continuous Scanner</p>
+                {scanning && (
+                  <span className="text-xs font-bold text-success animate-pulse">
+                    ● Camera Active — Point at QR Code
+                  </span>
+                )}
+              </div>
+              <h2 className="mt-2 font-display text-4xl sm:text-5xl text-white">
+                Scan. Approve. Auto-Next.
+              </h2>
               <p className="mt-2 text-xs text-security-muted">
-                Scan the participant&apos;s QR code via camera, upload a QR screenshot, or enter their Registration ID (e.g. 424 or KLT26-000424) below.
+                Point the camera at the participant&apos;s QR code. Once you approve Check-In or Check-Out, this scanner automatically re-opens for the next participant.
               </p>
 
               {/* Camera Frame */}
-              <div className="mt-6 min-h-[280px] relative rounded-lg overflow-hidden border border-security-border bg-black flex items-center justify-center">
+              <div className="mt-6 min-h-[300px] relative rounded-lg overflow-hidden border border-security-border bg-black flex items-center justify-center">
                 {scanning ? (
                   <div id="aurora-qr-reader" className="w-full" />
                 ) : (
@@ -487,7 +427,7 @@ export default function SecurityGatePage() {
                     <QrCode className="size-20 text-security-muted mx-auto mb-3" />
                     <p className="text-sm font-semibold text-white">QR Camera Scanner Ready</p>
                     <p className="text-xs text-security-muted mt-1">
-                      Tap Start Camera QR Scanner or select a participant from the Approved Roster below
+                      Tap Start Camera QR Scanner below to begin continuous gate scanning
                     </p>
                   </div>
                 )}
@@ -541,13 +481,13 @@ export default function SecurityGatePage() {
                 className="mt-8 pt-6 border-t border-security-border"
               >
                 <p className="text-xs text-security-muted mb-2 font-semibold uppercase tracking-wider">
-                  Quick Verify by Registration ID (e.g. 424 or KLT26-000424), Name, or Email:
+                  Or Verify by Registration ID (e.g. 425 or KLT26-000425), Name, or Email:
                 </p>
                 <div className="flex gap-2">
                   <Input
                     value={manualToken}
                     onChange={(e) => setManualToken(e.target.value)}
-                    placeholder="Type 424, KLT26-000424, name, or email..."
+                    placeholder="Type 425, KLT26-000425, name, or email..."
                     className="text-xs bg-security border-security-border text-white font-mono"
                   />
                   <Button
@@ -575,29 +515,18 @@ export default function SecurityGatePage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => {
-                        setScanError(null);
-                      }}
+                      onClick={returnToScannerAndRestartCamera}
                       className="border-destructive/40 text-xs"
                     >
-                      Dismiss Notice
+                      Dismiss &amp; Scan Next QR
                     </Button>
-                    {scannedResult?.participant && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleAllowEntry(true)}
-                        className="bg-success hover:bg-success/90 text-white text-xs font-semibold"
-                      >
-                        <CheckCircle2 className="size-3.5 mr-1" /> Re-Confirm Check-In (ENTRY)
-                      </Button>
-                    )}
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* VERIFIED PARTICIPANT EVALUATION SCREEN */}
+          {/* VERIFIED PARTICIPANT EVALUATION SCREEN — ONLY ONE ACTION BUTTON SHOWN AT A TIME */}
           {scannedResult && (
             <div className="surface bg-security-panel border-security-border p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
               {/* Top Status */}
@@ -613,7 +542,7 @@ export default function SecurityGatePage() {
                     isInside ? "bg-success/20 text-success" : "bg-primary/20 text-primary"
                   }`}
                 >
-                  Current State: {scannedResult.participant.campus_status}
+                  Currently: {scannedResult.participant.campus_status}
                 </span>
               </div>
 
@@ -646,50 +575,47 @@ export default function SecurityGatePage() {
                 </div>
               </div>
 
-              {/* BIG HIGH-CONTRAST CHECK-IN / CHECK-OUT BUTTONS */}
-              <div className="grid sm:grid-cols-2 gap-4 pt-2">
-                <Button
-                  size="lg"
-                  disabled={actionLoading}
-                  onClick={() => handleAllowEntry(true)}
-                  className={`h-16 text-lg font-bold shadow-xl ${
-                    isInside
-                      ? "bg-success/30 hover:bg-success/50 text-white border border-success/50"
-                      : "bg-success hover:bg-success/90 text-white"
-                  }`}
-                >
-                  <LogIn className="size-6 mr-2" />
-                  {isInside ? "ALREADY INSIDE (RE-LOG)" : "CHECK IN (ALLOW ENTRY)"}
-                </Button>
-
-                <Button
-                  size="lg"
-                  disabled={actionLoading}
-                  onClick={() => handleAllowExit(true)}
-                  className={`h-16 text-lg font-bold shadow-xl ${
-                    !isInside
-                      ? "bg-primary/30 hover:bg-primary/50 text-white border border-primary/50"
-                      : "bg-primary hover:bg-primary/90 text-white"
-                  }`}
-                >
-                  <LogOut className="size-6 mr-2" />
-                  {!isInside ? "ALREADY OUTSIDE (RE-LOG)" : "CHECK OUT (ALLOW EXIT)"}
-                </Button>
+              {/* SINGLE CONTEXTUAL ACTION BUTTON: EITHER CHECK-IN OR CHECK-OUT (NEVER BOTH) */}
+              <div className="pt-2">
+                {!isInside ? (
+                  <Button
+                    size="lg"
+                    disabled={actionLoading}
+                    onClick={handleAllowEntry}
+                    className="w-full h-16 text-xl font-bold shadow-xl bg-success hover:bg-success/90 text-white"
+                  >
+                    <LogIn className="size-6 mr-2.5" />
+                    {actionLoading
+                      ? "APPROVING ENTRY..."
+                      : "CHECK IN (ALLOW CAMPUS ENTRY)"}
+                  </Button>
+                ) : (
+                  <Button
+                    size="lg"
+                    disabled={actionLoading}
+                    onClick={handleAllowExit}
+                    className="w-full h-16 text-xl font-bold shadow-xl bg-primary hover:bg-primary/90 text-white"
+                  >
+                    <LogOut className="size-6 mr-2.5" />
+                    {actionLoading
+                      ? "APPROVING EXIT..."
+                      : "CHECK OUT (ALLOW CAMPUS EXIT)"}
+                  </Button>
+                )}
+                <p className="text-center text-[11px] text-security-muted mt-2">
+                  As soon as you tap above, entry/exit is logged and the camera scanner restarts automatically for the next QR.
+                </p>
               </div>
 
-              {/* Clear / Next Button */}
+              {/* Cancel / Return to Scanner Without Logging */}
               <div className="flex justify-between items-center pt-4 border-t border-security-border">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setScannedResult(null);
-                    setScanError(null);
-                    setManualToken("");
-                  }}
+                  onClick={returnToScannerAndRestartCamera}
                   className="border-security-border text-white hover:bg-white/10 text-xs"
                 >
-                  ← Scan / Verify Next Participant
+                  ← Cancel &amp; Return to Camera Scanner
                 </Button>
               </div>
             </div>
@@ -701,7 +627,7 @@ export default function SecurityGatePage() {
               <div>
                 <p className="section-label text-security-muted">Approved Attendees Roster</p>
                 <h3 className="font-display text-2xl text-white mt-0.5">
-                  1-Tap Gate Check-In / Check-Out ({approvedList.length})
+                  RGIPT Main Gate Roster ({approvedList.length})
                 </h3>
               </div>
               <div className="flex items-center gap-2">
@@ -740,6 +666,7 @@ export default function SecurityGatePage() {
                     >
                       <div
                         onClick={() => {
+                          stopCamera();
                           setScannedResult({ valid: true, participant: p });
                           setScanError(null);
                           window.scrollTo({ top: 0, behavior: "smooth" });
@@ -801,10 +728,10 @@ export default function SecurityGatePage() {
           </div>
         </section>
 
-        {/* Right Column: Live Gate Status & Recent Movement */}
+        {/* Right Column: Live Main Gate Status */}
         <aside className="space-y-6">
           <div className="surface bg-security-panel border-security-border p-6 rounded-lg">
-            <p className="section-label text-security-muted">Campus Occupancy</p>
+            <p className="section-label text-security-muted">RGIPT Main Gate · Occupancy</p>
             <div className="mt-4 flex items-end justify-between">
               <strong className="font-display text-6xl text-white">
                 {occupancy?.currentlyInside ?? "—"}
@@ -827,15 +754,20 @@ export default function SecurityGatePage() {
           </div>
 
           <div className="surface bg-security-panel border-security-border p-6 rounded-lg">
-            <h3 className="section-label text-security-muted mb-4">Guard Check-In Protocol</h3>
+            <h3 className="section-label text-security-muted mb-4">Single-Gate Continuous Protocol</h3>
             <ul className="space-y-2.5 text-xs text-security-muted leading-relaxed">
-              <li>1. Scan the participant&apos;s QR code, enter their ID (e.g. 425), or tap their name in the Approved Roster.</li>
-              <li>2. Visually match the person at the gate with their registered Live Photo.</li>
-              <li>3. Tap CHECK IN (ALLOW ENTRY) when entering campus and CHECK OUT (ALLOW EXIT) when leaving.</li>
+              <li>1. Scan the participant&apos;s QR pass at RGIPT Main Gate (or enter their ID).</li>
+              <li>2. Match the attendee&apos;s face with their registered Live Photo.</li>
+              <li>3. If outside, only <strong>CHECK IN</strong> is shown. If inside, only <strong>CHECK OUT</strong> is shown.</li>
+              <li>4. As soon as you approve, the camera automatically restarts for the next participant!</li>
             </ul>
           </div>
         </aside>
       </main>
+
+      <div className="max-w-6xl w-full mx-auto px-5 sm:px-8 pb-10">
+        <SponsorsShowcase dark />
+      </div>
     </div>
   );
 }
