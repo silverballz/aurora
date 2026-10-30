@@ -327,6 +327,11 @@ export default function AdminVerificationPage() {
           >
             <Plus className="size-3.5 mr-1.5" /> Add Participant
           </Button>
+          <Button asChild size="sm" variant="outline" className="text-xs">
+            <a href="/api/admin/reports?type=visual_dossier" target="_blank" rel="noreferrer">
+              <Download className="size-3.5 mr-1.5" /> Export All Aadhaar / IDs / Pics
+            </a>
+          </Button>
           <Button
             size="sm"
             variant={smtpReady ? "outline" : "default"}
@@ -460,20 +465,48 @@ export default function AdminVerificationPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedParticipant.selfie_path && (
+                    <a
+                      href={selectedParticipant.selfie_path}
+                      download={`${selectedParticipant.registration_id || selectedParticipant.full_name}-Live-Photo.jpg`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center h-8 px-2.5 rounded-md border border-border hover:bg-muted text-xs font-medium"
+                    >
+                      <Download className="size-3.5 mr-1" /> Live Pic
+                    </a>
+                  )}
                   <Button size="sm" variant="outline" onClick={openEditModal} className="text-xs">
-                    <Edit3 className="size-3.5 mr-1" /> Edit
+                    <Edit3 className="size-3.5 mr-1" /> Edit Profile
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
                     onClick={handleDeleteSelected}
-                    className="text-xs"
+                    className="text-xs font-semibold"
                   >
-                    <Trash2 className="size-3.5 mr-1" /> Delete
+                    <Trash2 className="size-3.5 mr-1" /> Delete Profile
                   </Button>
                 </div>
               </div>
+
+              {/* Correction Reason Banner if present */}
+              {selectedParticipant.correction_reason && (
+                <div className="mx-6 mt-4 p-3.5 rounded-lg border border-warning/40 bg-warning/10 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-warning flex items-center gap-1.5">
+                      <AlertCircle className="size-3.5" /> Correction Requested from Participant
+                    </p>
+                    <p className="text-xs text-foreground mt-1">
+                      Reason sent: <strong>{selectedParticipant.correction_reason}</strong>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      When the participant re-submits the form using <strong>{selectedParticipant.email}</strong>, this profile automatically updates its photos/details in place and returns to UNDER REVIEW.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Single Static QR Pass Card (Shown once Approved) */}
               {selectedParticipant.status === "APPROVED" && selectedParticipant.qr_data_url && (
@@ -551,9 +584,22 @@ export default function AdminVerificationPage() {
                     <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Student Identity Card
                     </span>
-                    <span className="text-[10px] text-success font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="size-3" /> Attached
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedParticipant.student_id_path && (
+                        <a
+                          href={selectedParticipant.student_id_path}
+                          download={`${selectedParticipant.registration_id || selectedParticipant.full_name}-Student-ID.jpg`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          <Download className="size-3" /> Download ID
+                        </a>
+                      )}
+                      <span className="text-[10px] text-success font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="size-3" /> Attached
+                      </span>
+                    </div>
                   </div>
                   {selectedParticipant.student_id_path ? (
                     <div
@@ -591,9 +637,22 @@ export default function AdminVerificationPage() {
                     <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Government ID (Aadhaar)
                     </span>
-                    <span className="text-[10px] text-success font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="size-3" /> Attached
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedParticipant.aadhaar_path && (
+                        <a
+                          href={selectedParticipant.aadhaar_path}
+                          download={`${selectedParticipant.registration_id || selectedParticipant.full_name}-Aadhaar.jpg`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          <Download className="size-3" /> Download Aadhaar
+                        </a>
+                      )}
+                      <span className="text-[10px] text-success font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="size-3" /> Attached
+                      </span>
+                    </div>
                   </div>
                   {selectedParticipant.aadhaar_path ? (
                     <div
@@ -656,6 +715,15 @@ export default function AdminVerificationPage() {
                 Approving generates 1 static QR pass for the entire event and emails it to the participant.
               </div>
               <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={ handleDeleteSelected }
+                  disabled={actionLoading}
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="size-4 mr-1" /> Delete Profile
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"

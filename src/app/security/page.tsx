@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Camera,
+  CameraOff,
   CheckCircle2,
   LogIn,
   LogOut,
+  Power,
   QrCode,
   RefreshCw,
   Search,
@@ -26,8 +28,9 @@ export default function SecurityGatePage() {
   const [approvedList, setApprovedList] = useState<any[]>([]);
   const [rosterSearch, setRosterSearch] = useState("");
 
-  // Scanner State
+  // Scanner State + Camera Standby / Auto-Restart Toggle
   const [scanning, setScanning] = useState(false);
+  const [autoRestartCamera, setAutoRestartCamera] = useState(true);
   const [manualToken, setManualToken] = useState("");
   const [evaluating, setEvaluating] = useState(false);
 
@@ -89,6 +92,12 @@ export default function SecurityGatePage() {
     setScanning(false);
   };
 
+  const handleTurnOffCameraStandby = async () => {
+    setAutoRestartCamera(false);
+    await stopCamera();
+    toast.info("Camera turned OFF (Standby Mode). Tap 'Start Camera' when the next participant arrives.");
+  };
+
   // Real Live QR Scanner using html5-qrcode with automatic camera fallback
   const startCamera = async () => {
     try {
@@ -96,6 +105,7 @@ export default function SecurityGatePage() {
       setScanError(null);
       setScannedResult(null);
       setManualToken("");
+      setAutoRestartCamera(true);
       scanLockRef.current = false;
       setScanning(true);
 
@@ -150,16 +160,20 @@ export default function SecurityGatePage() {
 
   /**
    * Automatically returns to the main scanner menu ("purana menu khul jaye")
-   * and restarts the camera immediately to scan the next QR pass!
+   * and restarts the camera if autoRestartCamera is enabled (unless guard toggled Camera OFF for standby).
    */
-  const returnToScannerAndRestartCamera = () => {
+  const returnToScannerAndRestartCamera = (shouldStartCamera = autoRestartCamera) => {
     setScannedResult(null);
     setScanError(null);
     setManualToken("");
     window.scrollTo({ top: 0, behavior: "smooth" });
-    setTimeout(() => {
-      startCamera();
-    }, 150);
+    if (shouldStartCamera) {
+      setTimeout(() => {
+        startCamera();
+      }, 150);
+    } else {
+      stopCamera();
+    }
   };
 
   const handleScanImageFile = async (file: File) => {
@@ -230,7 +244,7 @@ export default function SecurityGatePage() {
     }
   };
 
-  // ALLOW ENTRY (Check-In) -> Auto-return to scanner & auto-restart camera
+  // ALLOW ENTRY (Check-In) -> Auto-return to scanner & auto-restart camera if enabled
   const handleAllowEntry = async () => {
     if (!scannedResult?.participant) return;
     try {
@@ -251,9 +265,9 @@ export default function SecurityGatePage() {
       if (!res.ok) {
         toast.error(data.message || data.error || "Entry blocked!");
       } else {
-        toast.success(`✓ CHECKED IN: ${scannedResult.participant.full_name} — Ready for next QR!`);
+        toast.success(`✓ CHECKED IN: ${scannedResult.participant.full_name}`);
         fetchStatsAndRoster();
-        returnToScannerAndRestartCamera();
+        returnToScannerAndRestartCamera(autoRestartCamera);
       }
     } catch {
       toast.error("Network error executing entry.");
@@ -262,7 +276,7 @@ export default function SecurityGatePage() {
     }
   };
 
-  // ALLOW EXIT (Check-Out) -> Auto-return to scanner & auto-restart camera
+  // ALLOW EXIT (Check-Out) -> Auto-return to scanner & auto-restart camera if enabled
   const handleAllowExit = async () => {
     if (!scannedResult?.participant) return;
     try {
@@ -283,9 +297,9 @@ export default function SecurityGatePage() {
       if (!res.ok) {
         toast.error(data.message || data.error || "Exit blocked!");
       } else {
-        toast.success(`✓ CHECKED OUT: ${scannedResult.participant.full_name} — Ready for next QR!`);
+        toast.success(`✓ CHECKED OUT: ${scannedResult.participant.full_name}`);
         fetchStatsAndRoster();
-        returnToScannerAndRestartCamera();
+        returnToScannerAndRestartCamera(autoRestartCamera);
       }
     } catch {
       toast.error("Network error executing exit.");
@@ -366,25 +380,38 @@ export default function SecurityGatePage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-2 bg-white px-2.5 py-1 rounded border border-security-border">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-700">
-              Platinum Sponsor
-            </span>
-            <img
-              src="/sponsors/gruner-logo.png"
-              alt="Gruner Renewable Energy"
-              className="h-5 object-contain"
-            />
-          </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Quick Camera ON/OFF Toggle in Header */}
+          <button
+            type="button"
+            onClick={() => {
+              if (scanning) {
+                handleTurnOffCameraStandby();
+              } else {
+                startCamera();
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-all cursor-pointer ${
+              scanning
+                ? "bg-destructive/20 border-destructive text-white hover:bg-destructive/30"
+                : "bg-success/20 border-success/50 text-success hover:bg-success/30"
+            }`}
+          >
+            {scanning ? (
+              <>
+                <CameraOff className="size-3.5" /> Turn Camera OFF (No One Coming)
+              </>
+            ) : (
+              <>
+                <Camera className="size-3.5" /> Turn Camera ON
+              </>
+            )}
+          </button>
 
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-security border border-security-border text-xs font-bold text-primary">
             <ShieldCheck className="size-3.5" /> RGIPT MAIN GATE
           </span>
 
-          <span className="hidden sm:inline-block px-2.5 py-1 rounded-full bg-success/20 text-success text-xs font-bold uppercase tracking-wider">
-            ● Online
-          </span>
           <Button
             size="sm"
             variant="ghost"
@@ -406,19 +433,41 @@ export default function SecurityGatePage() {
           {/* SCANNER VIEW (Main Menu) */}
           {!scannedResult && (
             <div className="surface bg-security-panel border-security-border p-6 sm:p-8">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="section-label text-security-muted">RGIPT Main Gate · Continuous Scanner</p>
-                {scanning && (
-                  <span className="text-xs font-bold text-success animate-pulse">
-                    ● Camera Active — Point at QR Code
-                  </span>
-                )}
+
+                {/* Auto-Restart vs Standby Toggle Switch */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !autoRestartCamera;
+                    setAutoRestartCamera(next);
+                    if (!next && scanning) {
+                      stopCamera();
+                      toast.info("Camera Standby ON — Camera turned off while no one is at the gate.");
+                    } else if (next && !scanning) {
+                      startCamera();
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border cursor-pointer transition-colors ${
+                    autoRestartCamera
+                      ? "bg-success/15 border-success/40 text-success"
+                      : "bg-white/10 border-security-border text-security-muted"
+                  }`}
+                >
+                  <Power className="size-3" />
+                  {autoRestartCamera
+                    ? "Auto-Camera: ON (Continuous)"
+                    : "Camera Standby: OFF (No One Coming)"}
+                </button>
               </div>
+
               <h2 className="mt-2 font-display text-4xl sm:text-5xl text-white">
                 Scan. Approve. Auto-Next.
               </h2>
               <p className="mt-2 text-xs text-security-muted">
-                Point the camera at the participant&apos;s QR code. Once you approve Check-In or Check-Out, this scanner automatically re-opens for the next participant.
+                Point the camera at the participant&apos;s QR code. When no one is at the gate, tap{" "}
+                <strong>Turn Camera OFF (No One Coming)</strong> to put the scanner on standby and save battery.
               </p>
 
               {/* Camera Frame */}
@@ -427,10 +476,12 @@ export default function SecurityGatePage() {
                   <div id="aurora-qr-reader" className="w-full" />
                 ) : (
                   <div className="text-center p-6">
-                    <QrCode className="size-20 text-security-muted mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-white">QR Camera Scanner Ready</p>
-                    <p className="text-xs text-security-muted mt-1">
-                      Tap Start Camera QR Scanner below to begin continuous gate scanning
+                    <CameraOff className="size-16 text-security-muted mx-auto mb-3 opacity-80" />
+                    <p className="text-sm font-semibold text-white">
+                      Camera is OFF (Standby Mode)
+                    </p>
+                    <p className="text-xs text-security-muted mt-1 max-w-sm mx-auto">
+                      Camera is turned off while no one is coming. Tap &ldquo;Start Camera QR Scanner&rdquo; below when a participant arrives at the gate.
                     </p>
                   </div>
                 )}
@@ -441,11 +492,11 @@ export default function SecurityGatePage() {
                 {scanning ? (
                   <Button
                     size="lg"
-                    onClick={stopCamera}
-                    variant="outline"
-                    className="sm:col-span-2 w-full h-13 text-base font-semibold border-security-border text-white hover:bg-white/10"
+                    onClick={handleTurnOffCameraStandby}
+                    variant="destructive"
+                    className="sm:col-span-2 w-full h-13 text-base font-bold shadow-lg"
                   >
-                    Stop Camera
+                    <CameraOff className="size-5 mr-2" /> Turn Camera OFF (No One Coming / Standby)
                   </Button>
                 ) : (
                   <>
@@ -518,10 +569,21 @@ export default function SecurityGatePage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={returnToScannerAndRestartCamera}
+                      onClick={() => returnToScannerAndRestartCamera(true)}
                       className="border-destructive/40 text-xs"
                     >
-                      Dismiss &amp; Scan Next QR
+                      Dismiss &amp; Restart Camera
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setAutoRestartCamera(false);
+                        returnToScannerAndRestartCamera(false);
+                      }}
+                      className="text-xs"
+                    >
+                      Dismiss &amp; Keep Camera OFF
                     </Button>
                   </div>
                 </div>
@@ -579,7 +641,7 @@ export default function SecurityGatePage() {
               </div>
 
               {/* SINGLE CONTEXTUAL ACTION BUTTON: EITHER CHECK-IN OR CHECK-OUT (NEVER BOTH) */}
-              <div className="pt-2">
+              <div className="pt-2 space-y-3">
                 {!isInside ? (
                   <Button
                     size="lg"
@@ -605,21 +667,28 @@ export default function SecurityGatePage() {
                       : "CHECK OUT (ALLOW CAMPUS EXIT)"}
                   </Button>
                 )}
-                <p className="text-center text-[11px] text-security-muted mt-2">
-                  As soon as you tap above, entry/exit is logged and the camera scanner restarts automatically for the next QR.
-                </p>
-              </div>
 
-              {/* Cancel / Return to Scanner Without Logging */}
-              <div className="flex justify-between items-center pt-4 border-t border-security-border">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={returnToScannerAndRestartCamera}
-                  className="border-security-border text-white hover:bg-white/10 text-xs"
-                >
-                  ← Cancel &amp; Return to Camera Scanner
-                </Button>
+                {/* Toggle whether camera restarts after approving this participant */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-security-border text-xs">
+                  <label className="flex items-center gap-2 text-security-muted cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoRestartCamera}
+                      onChange={(e) => setAutoRestartCamera(e.target.checked)}
+                      className="rounded"
+                    />
+                    Auto-restart camera for next QR after approval (uncheck if no one else is in line)
+                  </label>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => returnToScannerAndRestartCamera(false)}
+                    className="border-security-border text-white hover:bg-white/10 text-xs"
+                  >
+                    ← Back to Menu (Camera OFF)
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -762,7 +831,7 @@ export default function SecurityGatePage() {
               <li>1. Scan the participant&apos;s QR pass at RGIPT Main Gate (or enter their ID).</li>
               <li>2. Match the attendee&apos;s face with their registered Live Photo.</li>
               <li>3. If outside, only <strong>CHECK IN</strong> is shown. If inside, only <strong>CHECK OUT</strong> is shown.</li>
-              <li>4. As soon as you approve, the camera automatically restarts for the next participant!</li>
+              <li>4. When no one is at the gate, tap <strong>Turn Camera OFF (No One Coming)</strong> to keep the camera off in standby.</li>
             </ul>
           </div>
         </aside>

@@ -149,8 +149,13 @@ export default function AdminParticipantsPage() {
             <RefreshCw className="size-3.5 mr-1.5" /> Refresh
           </Button>
           <Button asChild variant="outline" size="sm" className="text-xs">
-            <a href="/api/admin/reports?type=participants" download>
-              <Download className="size-3.5 mr-1.5" /> Export CSV
+            <a href="/api/admin/reports?type=full_with_docs" download>
+              <Download className="size-3.5 mr-1.5" /> Export CSV (With Aadhaar/ID Links)
+            </a>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="text-xs">
+            <a href="/api/admin/reports?type=visual_dossier" target="_blank" rel="noreferrer">
+              <Download className="size-3.5 mr-1.5" /> Visual Aadhaar & ID Archive
             </a>
           </Button>
         </div>
@@ -266,7 +271,7 @@ export default function AdminParticipantsPage() {
                         onClick={() => handleDeleteParticipant(p)}
                         className="h-7 px-2.5 text-xs"
                       >
-                        <Trash2 className="size-3" />
+                        <Trash2 className="size-3 mr-1" /> Delete Profile
                       </Button>
                     </div>
                   </td>

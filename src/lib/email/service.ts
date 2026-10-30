@@ -234,8 +234,22 @@ export async function sendCorrectionEmail(params: {
   to: string;
   participantName: string;
   reason: string;
+  college?: string;
+  mobile?: string;
+  baseUrl?: string;
 }) {
-  const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/register`;
+  const origin =
+    params.baseUrl ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://aurora-coral-nu.vercel.app";
+  const qs = new URLSearchParams({
+    name: params.participantName || "",
+    email: params.to || "",
+    college: params.college || "",
+    mobile: params.mobile || "",
+    correction: params.reason || "",
+  });
+  const registerUrl = `${origin}/register?${qs.toString()}`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 20px; background: #faf9fb;">

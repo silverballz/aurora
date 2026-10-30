@@ -70,6 +70,17 @@ export default function PublicRegistrationPage() {
   const [college, setCollege] = useState("");
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
+  const [correctionBanner, setCorrectionBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("name")) setFullName(sp.get("name") || "");
+    if (sp.get("college")) setCollege(sp.get("college") || "");
+    if (sp.get("mobile")) setMobile(sp.get("mobile") || "");
+    if (sp.get("email")) setEmail(sp.get("email") || "");
+    if (sp.get("correction")) setCorrectionBanner(sp.get("correction"));
+  }, []);
 
   // Live Pic State
   const [cameraActive, setCameraActive] = useState(false);
@@ -276,6 +287,17 @@ export default function PublicRegistrationPage() {
               <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
                 Complete your details below. Once verified by admin, your <strong>single static QR pass</strong> for the entire fest will be emailed to you.
               </p>
+              {correctionBanner && (
+                <div className="mt-4 p-4 rounded-xl border-2 border-warning bg-warning/10 text-foreground text-xs space-y-1">
+                  <p className="font-bold uppercase tracking-wider text-warning">
+                    Action Required — Admin Correction Requested:
+                  </p>
+                  <p className="text-sm font-medium">{correctionBanner}</p>
+                  <p className="text-muted-foreground">
+                    Your details have been pre-filled below. Please re-upload the requested photo/document using the same email address to update your existing registration.
+                  </p>
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-8">

@@ -24,10 +24,14 @@ export async function POST(request: Request) {
     // Send correction email to participant
     let emailSent = false;
     try {
+      const origin = new URL(request.url).origin;
       const emailRes = await sendCorrectionEmail({
         to: participant.email,
         participantName: participant.full_name,
         reason: reason.trim(),
+        college: participant.college || "",
+        mobile: participant.mobile || "",
+        baseUrl: origin,
       });
       emailSent = emailRes.success;
     } catch (e) {
