@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  ADMIN_CREDENTIALS,
   GUARD_CREDENTIALS,
   SESSION_COOKIE_NAME,
   createSessionToken,
+  isValidAdminOrCohead,
 } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
@@ -21,22 +21,23 @@ export async function POST(request: Request) {
     const cleanPass = String(password);
 
     if (role === "ADMIN") {
-      if (cleanId !== ADMIN_CREDENTIALS.email || cleanPass !== ADMIN_CREDENTIALS.password) {
+      if (!isValidAdminOrCohead(cleanId, cleanPass)) {
         return NextResponse.json(
-          { error: "Invalid administrator email or password." },
+          { error: "Invalid administrator or Technical Co-Head credentials." },
           { status: 401 }
         );
       }
 
       const token = await createSessionToken({
-        sub: ADMIN_CREDENTIALS.email,
+        sub: cleanId,
         role: "ADMIN",
+        gate: "gate-main",
       });
 
       const res = NextResponse.json({
         success: true,
         role: "ADMIN",
-        user: ADMIN_CREDENTIALS.email,
+        user: cleanId,
       });
 
       res.cookies.set(SESSION_COOKIE_NAME, token, {
@@ -56,26 +57,28 @@ export async function POST(request: Request) {
           cleanId === "security") &&
         cleanPass === GUARD_CREDENTIALS.password;
 
-      const isAdminMatch =
-        cleanId === ADMIN_CREDENTIALS.email && cleanPass === ADMIN_CREDENTIALS.password;
+      const isAdminOrCoheadMatch = isValidAdminOrCohead(cleanId, cleanPass);
 
-      if (!isGuardMatch && !isAdminMatch) {
+      if (!isGuardMatch && !isAdminOrCoheadMatch) {
         return NextResponse.json(
-          { error: "Invalid security guard ID or password." },
+          { error: "Invalid security guard or Co-Head credentials." },
           { status: 401 }
         );
       }
 
+      const assignedRole = isAdminOrCoheadMatch ? "ADMIN" : "GUARD";
+      const assignedSub = isAdminOrCoheadMatch ? cleanId : GUARD_CREDENTIALS.username;
+
       const token = await createSessionToken({
-        sub: isAdminMatch ? ADMIN_CREDENTIALS.email : GUARD_CREDENTIALS.username,
-        role: isAdminMatch ? "ADMIN" : "GUARD",
+        sub: assignedSub,
+        role: assignedRole,
         gate: gate || "gate-main",
       });
 
       const res = NextResponse.json({
         success: true,
-        role: isAdminMatch ? "ADMIN" : "GUARD",
-        user: isAdminMatch ? ADMIN_CREDENTIALS.email : GUARD_CREDENTIALS.username,
+        role: assignedRole,
+        user: assignedSub,
         gate: gate || "gate-main",
       });
 

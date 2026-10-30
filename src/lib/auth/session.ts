@@ -8,10 +8,46 @@ export const ADMIN_CREDENTIALS = {
   password: process.env.ADMIN_PASSWORD || "Kaltarang@2026",
 };
 
+export const COHEAD_CREDENTIALS = {
+  // Single common login ID for Technical Co-Heads (+ their individual RGIPT emails also accepted with the same password)
+  id: (process.env.COHEAD_EMAIL || "cohead@rgipt.ac.in").toLowerCase(),
+  aliases: [
+    "cohead@rgipt.ac.in",
+    "cohead",
+    "tech@rgipt.ac.in",
+    "25cd3014@rgipt.ac.in", // Karan Sharma
+    "25ec3055@rgipt.ac.in", // Yashveer Nenava
+    "25ev3009@rgipt.ac.in", // Ayush Sharma
+    "25cd3041@rgipt.ac.in", // Samarth Patil
+    "25it3022@rgipt.ac.in", // Harsh Vardhan Tiwari
+  ],
+  password: process.env.COHEAD_PASSWORD || "CoHead@2026",
+};
+
 export const GUARD_CREDENTIALS = {
   username: (process.env.GUARD_USERNAME || "security@rgipt.ac.in").toLowerCase(),
   password: process.env.GUARD_PASSWORD || "Guard@2026",
 };
+
+export function isValidAdminOrCohead(identifier: string, password: string): boolean {
+  const cleanId = identifier.trim().toLowerCase();
+  const cleanPass = password.trim();
+
+  // Super Coordinator (Anurag Sharma)
+  if (cleanId === ADMIN_CREDENTIALS.email && cleanPass === ADMIN_CREDENTIALS.password) {
+    return true;
+  }
+
+  // Technical Co-Heads single common login
+  if (
+    COHEAD_CREDENTIALS.aliases.includes(cleanId) &&
+    (cleanPass === COHEAD_CREDENTIALS.password || cleanPass === ADMIN_CREDENTIALS.password)
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 export interface SessionPayload {
   sub: string;

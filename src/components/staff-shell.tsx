@@ -17,7 +17,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Brand, SponsorsShowcase } from "./aurora-shell";
+import { Brand, PwaInstallBanner, SponsorsShowcase } from "./aurora-shell";
 
 const adminNav = [
   { label: "Overview", href: "/admin", icon: BarChart3 },
@@ -138,6 +138,7 @@ export function StaffShell({
       {/* Main Content Area */}
       <main className="min-w-0 flex-1 flex flex-col justify-between">
         <div>
+          <PwaInstallBanner appTitle="Aurora Admin Console Web App" />
           <header className="flex flex-col gap-4 border-b border-border bg-card/40 px-6 py-6 sm:px-10 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="section-label text-primary">Kaltarang 2026 · RGIPT Administration</p>

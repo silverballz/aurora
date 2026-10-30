@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SponsorsShowcase } from "@/components/aurora-shell";
+import { PwaInstallBanner, SponsorsShowcase } from "@/components/aurora-shell";
 import { toast } from "sonner";
 
 const MAIN_GATE_ID = "gate-main";
@@ -345,6 +345,9 @@ export default function SecurityGatePage() {
         id="aurora-qr-file-reader"
         className="fixed -left-[9999px] top-0 w-[360px] h-[360px] overflow-hidden opacity-0 pointer-events-none"
       />
+
+      {/* Mobile Chrome 1-Tap Web App Install Banner */}
+      <PwaInstallBanner appTitle="Aurora Gate Scanner Web App" dark />
 
       {/* High-Contrast Single Gate Header */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-security-border px-5 py-4 sm:px-8 bg-security-panel">
