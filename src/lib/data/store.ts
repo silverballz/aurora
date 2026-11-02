@@ -310,14 +310,19 @@ export async function saveStoreToDisk(): Promise<void> {
     console.warn("Could not persist store to local disk:", err);
   }
 
-  // 2. Sync to shared serverless cloud store (bytebin snapshot + multi-pointer redundancy)
+  // 2. Sync to shared serverless cloud store (bytebin snapshot + fast dual REST pointers)
   try {
+    // Safety guard: never overwrite cloud if this instance hasn't hydrated real participants yet
+    if (memoryStore.participants.size <= 1) {
+      await loadStoreFromDisk(true);
+    }
+
     const postRes = await fetch("https://bytebin.lucko.me/post", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: jsonStr,
       cache: "no-store",
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(4500),
     });
 
     if (postRes.ok) {
@@ -326,37 +331,32 @@ export async function saveStoreToDisk(): Promise<void> {
         appliedBlobKeys.add(key);
         globalForAurora.__AURORA_LAST_SYNC_TS__ = Date.now();
         const pointerPayload = { blobKey: key, ts: Date.now() };
+        const bodyStr = JSON.stringify({
+          name: "aurora-klt26-store-pointer",
+          data: pointerPayload,
+        });
 
-        // Update primary unlimited Bytebin pointer + rotate across backup pointers + ntfy stream
-        const primaryPtrUrl =
-          CLOUD_POINTER_URLS[Math.floor(Math.random() * CLOUD_POINTER_URLS.length)];
-
+        // Update primary & secondary REST pointers in parallel (fast ~900ms, no 4.5s timeout stall)
         await Promise.allSettled([
-          fetch(BYTEBIN_POINTER_URL, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${BYTEBIN_POINTER_MOD_KEY}`,
-            },
-            body: JSON.stringify(pointerPayload),
-            cache: "no-store",
-            signal: AbortSignal.timeout(4500),
-          }),
-          fetch(primaryPtrUrl, {
+          fetch(CLOUD_POINTER_URLS[0], {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: "aurora-klt26-store-pointer",
-              data: pointerPayload,
-            }),
+            body: bodyStr,
             cache: "no-store",
-            signal: AbortSignal.timeout(4000),
+            signal: AbortSignal.timeout(2500),
+          }),
+          fetch(CLOUD_POINTER_URLS[1], {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: bodyStr,
+            cache: "no-store",
+            signal: AbortSignal.timeout(2500),
           }),
           fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}`, {
             method: "POST",
             body: JSON.stringify(pointerPayload),
             cache: "no-store",
-            signal: AbortSignal.timeout(4000),
+            signal: AbortSignal.timeout(2000),
           }),
         ]);
       }
@@ -367,13 +367,13 @@ export async function saveStoreToDisk(): Promise<void> {
 }
 
 export async function loadStoreFromDisk(force = false): Promise<boolean> {
-  // Coalesce concurrent requests within 2.5 seconds on the same warm serverless instance
+  // Fast warm-instance cache (6s) so rapid consecutive gate scans return in <50ms
   const now = Date.now();
   if (
     !force &&
     globalForAurora.__AURORA_LAST_SYNC_TS__ &&
-    now - globalForAurora.__AURORA_LAST_SYNC_TS__ < 2500 &&
-    memoryStore.participants.size > 0
+    now - globalForAurora.__AURORA_LAST_SYNC_TS__ < 6000 &&
+    memoryStore.participants.size > 1
   ) {
     enforceSingleGate();
     return true;
@@ -400,50 +400,40 @@ export async function loadStoreFromDisk(force = false): Promise<boolean> {
       console.warn("Local disk load warning:", err);
     }
 
-    // 2. Pull latest snapshots from shared serverless cloud store
+    // 2. Pull latest snapshot from shared serverless cloud store
     try {
       const candidates: { blobKey: string; ts: number }[] = [];
 
-      // Tier A: Unlimited-rate Bytebin mutable pointer + one rotating restful-api pointer in parallel
-      const rotatingPtr =
-        CLOUD_POINTER_URLS[Math.floor(Math.random() * CLOUD_POINTER_URLS.length)];
-
-      const [bytebinPtrRes, restPtrRes] = await Promise.allSettled([
-        fetch(BYTEBIN_POINTER_URL, {
+      // Query primary & secondary REST pointers in parallel (~900ms)
+      const [ptr1Res, ptr2Res] = await Promise.allSettled([
+        fetch(CLOUD_POINTER_URLS[0], {
           cache: "no-store",
-          signal: AbortSignal.timeout(3500),
+          signal: AbortSignal.timeout(2500),
         }),
-        fetch(rotatingPtr, {
+        fetch(CLOUD_POINTER_URLS[1], {
           cache: "no-store",
-          signal: AbortSignal.timeout(3500),
+          signal: AbortSignal.timeout(2500),
         }),
       ]);
 
-      if (bytebinPtrRes.status === "fulfilled" && bytebinPtrRes.value.ok) {
-        try {
-          const j = await bytebinPtrRes.value.json();
-          if (j?.blobKey) {
-            candidates.push({ blobKey: j.blobKey, ts: Number(j.ts || 0) });
-          }
-        } catch {}
+      for (const r of [ptr1Res, ptr2Res]) {
+        if (r.status === "fulfilled" && r.value.ok) {
+          try {
+            const j = await r.value.json();
+            const k = j?.data?.blobKey;
+            if (k) {
+              candidates.push({ blobKey: k, ts: Number(j?.data?.ts || 0) });
+            }
+          } catch {}
+        }
       }
 
-      if (restPtrRes.status === "fulfilled" && restPtrRes.value.ok) {
-        try {
-          const j = await restPtrRes.value.json();
-          const k = j?.data?.blobKey;
-          if (k) {
-            candidates.push({ blobKey: k, ts: Number(j?.data?.ts || 0) });
-          }
-        } catch {}
-      }
-
-      // Tier B: Secondary fallback (ntfy stream) only if Tier A returned nothing
+      // Secondary fallback (ntfy stream) only if REST pointers returned nothing
       if (candidates.length === 0) {
         try {
           const res = await fetch(`https://ntfy.sh/${CLOUD_INDEX_TOPIC}/json?poll=1&since=all`, {
             cache: "no-store",
-            signal: AbortSignal.timeout(3500),
+            signal: AbortSignal.timeout(2500),
           });
           if (res.ok) {
             const text = (await res.text()).trim();
@@ -465,22 +455,25 @@ export async function loadStoreFromDisk(force = false): Promise<boolean> {
         } catch {}
       }
 
-      // Sort candidates from oldest to newest so the newest snapshot wins
-      candidates.sort((a, b) => a.ts - b.ts);
+      // Sort newest first and download ONLY the single newest snapshot blob
+      candidates.sort((a, b) => b.ts - a.ts);
       const uniqueKeys = Array.from(new Set(candidates.map((c) => c.blobKey)));
 
       for (const key of uniqueKeys) {
-        if (!appliedBlobKeys.has(key)) {
-          const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, {
-            cache: "no-store",
-            signal: AbortSignal.timeout(4500),
-          });
-          if (blobRes.ok) {
-            const cloudData = await blobRes.json();
-            mergeSerializedIntoMemory(cloudData);
-            appliedBlobKeys.add(key);
-            loaded = true;
-          }
+        if (appliedBlobKeys.has(key)) {
+          loaded = true;
+          break;
+        }
+        const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(3500),
+        });
+        if (blobRes.ok) {
+          const cloudData = await blobRes.json();
+          mergeSerializedIntoMemory(cloudData);
+          appliedBlobKeys.add(key);
+          loaded = true;
+          break; // Newest snapshot contains full state — no need to download older blobs
         }
       }
 

@@ -117,17 +117,20 @@ export default function SecurityGatePage() {
           return;
         }
 
-        const scanner = new Html5Qrcode("aurora-qr-reader");
+        const scanner = new Html5Qrcode("aurora-qr-reader", {
+          useBarCodeDetectorIfSupported: true,
+          verbose: false,
+        });
         html5QrCodeRef.current = scanner;
 
         const onScanSuccess = async (decodedText: string) => {
           if (scanLockRef.current || !decodedText) return;
           scanLockRef.current = true;
-          await stopCamera();
+          void stopCamera();
           await evaluateToken(decodedText);
         };
 
-        const config = { fps: 12, qrbox: { width: 250, height: 250 } };
+        const config = { fps: 20, qrbox: { width: 250, height: 250 } };
 
         try {
           await scanner.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
