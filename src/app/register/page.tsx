@@ -398,7 +398,7 @@ export default function PublicRegistrationPage() {
                 <div className="aspect-[4/3] max-w-md mx-auto relative rounded-lg overflow-hidden border-2 border-dashed border-border bg-card flex items-center justify-center">
                   {selfieDataUrl ? (
                     <div className="relative size-full">
-                      <img src={selfieDataUrl} alt="Captured live photo" className="size-full object-cover" />
+                      <img src={selfieDataUrl || undefined} alt="Captured live photo" className="size-full object-cover" />
                       <div className="absolute bottom-3 left-3 right-3 flex justify-between bg-black/70 backdrop-blur-md p-2.5 rounded text-white text-xs">
                         <span className="flex items-center gap-1.5 text-success font-semibold">
                           <Check className="size-4" /> Live Photo Captured
@@ -499,11 +499,11 @@ export default function PublicRegistrationPage() {
                         Clear photo of your College Student ID Card.
                       </p>
                     </div>
-                    {studentIdDataUrl && studentIdDataUrl.startsWith("data:image") && (
+                    {studentIdDataUrl?.startsWith("data:image") ? (
                       <div className="h-28 rounded border border-border overflow-hidden bg-black/5">
-                        <img src={studentIdDataUrl} alt="Student ID preview" className="size-full object-contain" />
+                        <img src={studentIdDataUrl ?? undefined} alt="Student ID preview" className="size-full object-contain" />
                       </div>
-                    )}
+                    ) : null}
                     <div>
                       <input
                         type="file"
@@ -537,11 +537,11 @@ export default function PublicRegistrationPage() {
                         Clear photo of your Aadhaar Card.
                       </p>
                     </div>
-                    {aadhaarDataUrl && aadhaarDataUrl.startsWith("data:image") && (
+                    {aadhaarDataUrl?.startsWith("data:image") ? (
                       <div className="h-28 rounded border border-border overflow-hidden bg-black/5">
-                        <img src={aadhaarDataUrl} alt="Aadhaar preview" className="size-full object-contain" />
+                        <img src={aadhaarDataUrl ?? undefined} alt="Aadhaar preview" className="size-full object-contain" />
                       </div>
-                    )}
+                    ) : null}
                     <div>
                       <input
                         type="file"
