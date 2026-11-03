@@ -4,15 +4,13 @@ import { AccessLog, Participant } from "@/lib/types/database";
 
 export async function POST(request: Request) {
   try {
-    await loadStoreFromDisk();
-    const {
-      participant_id,
-      participant_snapshot,
-      gate_id = "gate-main",
-      operator_id = "usr-sec-1",
-      notes,
-      force = false,
-    } = await request.json();
+    return NextResponse.json(
+      {
+        error: "Check-in is permanently closed. Fest has concluded. Only check-out (exit) is allowed.",
+        message: "Check-in is permanently closed. Fest has concluded. Only check-out (exit) is allowed.",
+      },
+      { status: 403 }
+    );
 
     if (!participant_id) {
       return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });

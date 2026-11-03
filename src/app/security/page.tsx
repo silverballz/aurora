@@ -658,33 +658,22 @@ export default function SecurityGatePage() {
                 </div>
               </div>
 
-              {/* SINGLE CONTEXTUAL ACTION BUTTON: EITHER CHECK-IN OR CHECK-OUT (NEVER BOTH) */}
+              {/* SINGLE CONTEXTUAL ACTION BUTTON: ONLY CHECK-OUT ALLOWED (CHECK-IN CLOSED POST-FEST) */}
               <div className="pt-2 space-y-3">
-                {!isInside ? (
-                  <Button
-                    size="lg"
-                    disabled={actionLoading}
-                    onClick={handleAllowEntry}
-                    className="w-full h-16 text-xl font-bold shadow-xl bg-success hover:bg-success/90 text-white"
-                  >
-                    <LogIn className="size-6 mr-2.5" />
-                    {actionLoading
-                      ? "APPROVING ENTRY..."
-                      : "CHECK IN (ALLOW CAMPUS ENTRY)"}
-                  </Button>
-                ) : (
-                  <Button
-                    size="lg"
-                    disabled={actionLoading}
-                    onClick={handleAllowExit}
-                    className="w-full h-16 text-xl font-bold shadow-xl bg-primary hover:bg-primary/90 text-white"
-                  >
-                    <LogOut className="size-6 mr-2.5" />
-                    {actionLoading
-                      ? "APPROVING EXIT..."
-                      : "CHECK OUT (ALLOW CAMPUS EXIT)"}
-                  </Button>
-                )}
+                <Button
+                  size="lg"
+                  disabled={actionLoading}
+                  onClick={handleAllowExit}
+                  className="w-full h-16 text-xl font-bold shadow-xl bg-primary hover:bg-primary/90 text-white"
+                >
+                  <LogOut className="size-6 mr-2.5" />
+                  {actionLoading
+                    ? "CHECKING OUT..."
+                    : "CHECK OUT (MARK FINAL CAMPUS EXIT)"}
+                </Button>
+                <p className="text-center text-xs text-security-muted">
+                  Note: Entry check-ins are permanently closed as Kaltarang 2026 has concluded.
+                </p>
 
                 {/* Toggle whether camera restarts after approving this participant */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-security-border text-xs">
@@ -790,25 +779,14 @@ export default function SecurityGatePage() {
                           {p.campus_status}
                         </span>
 
-                        {!pInside ? (
-                          <Button
-                            size="sm"
-                            disabled={actionLoading}
-                            onClick={() => handleQuickRosterAction(p, "ENTRY")}
-                            className="h-8 bg-success hover:bg-success/90 text-white text-xs font-semibold"
-                          >
-                            <LogIn className="size-3.5 mr-1" /> Check In
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            disabled={actionLoading}
-                            onClick={() => handleQuickRosterAction(p, "EXIT")}
-                            className="h-8 bg-primary hover:bg-primary/90 text-white text-xs font-semibold"
-                          >
-                            <LogOut className="size-3.5 mr-1" /> Check Out
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          disabled={actionLoading}
+                          onClick={() => handleQuickRosterAction(p, "EXIT")}
+                          className="h-8 bg-primary hover:bg-primary/90 text-white text-xs font-semibold"
+                        >
+                          <LogOut className="size-3.5 mr-1" /> Check Out
+                        </Button>
                       </div>
                     </div>
                   );
