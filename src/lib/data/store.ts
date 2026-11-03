@@ -1,4 +1,5 @@
 import fs from "fs";
+import finalClosedSnapshot from "./final-closed-snapshot.json";
 import {
   User,
   Invitation,
@@ -131,6 +132,10 @@ const SINGLE_MAIN_GATE: Gate = {
 function enforceSingleGate() {
   memoryStore.gates.clear();
   memoryStore.gates.set(SINGLE_MAIN_GATE.id, SINGLE_MAIN_GATE);
+  // Fest Concluded: Permanent Check-Out enforced across all participants (0 INSIDE)
+  for (const p of memoryStore.participants.values()) {
+    p.campus_status = "OUTSIDE";
+  }
 }
 
 /**
@@ -581,6 +586,14 @@ export function initializeSeedData() {
     revoked_by: null,
   };
   memoryStore.qrPasses.set(p1Hash, qrPass);
+
+  // Hydrate full final closed festival snapshot (all 99 participants permanently checked out + 219 gate logs)
+  try {
+    mergeSerializedIntoMemory(finalClosedSnapshot);
+    enforceSingleGate();
+  } catch (err) {
+    console.warn("Final snapshot seed warning:", err);
+  }
 }
 
 initializeSeedData();

@@ -366,6 +366,21 @@ export default function SecurityGatePage() {
       {/* Mobile Chrome 1-Tap Web App Install Banner */}
       <PwaInstallBanner appTitle="Aurora Gate Scanner Web App" dark />
 
+      {/* Fest Concluded — Permanent Bulk Check-Out Banner */}
+      <div className="mx-5 mt-4 sm:mx-8 p-4 rounded-xl border-2 border-success/50 bg-success/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-success">
+            ✓ Kaltarang 2026 Concluded · Portal Closed
+          </p>
+          <p className="text-sm font-semibold text-white mt-0.5">
+            All 99 External Participants Have Been Permanently Checked Out (0 Currently Inside Campus).
+          </p>
+        </div>
+        <span className="px-3 py-1 rounded-full bg-success text-white text-xs font-bold uppercase tracking-wider shrink-0">
+          0 Inside · 99 Checked Out
+        </span>
+      </div>
+
       {/* High-Contrast Single Gate Header */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-security-border px-5 py-4 sm:px-8 bg-security-panel">
         <div className="flex items-center gap-3">

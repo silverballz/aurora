@@ -230,7 +230,31 @@ export default function PublicRegistrationPage() {
       </header>
 
       <main className="flex-1 max-w-4xl w-full mx-auto px-5 py-10 sm:py-12 space-y-10">
-        {submitted ? (
+        {/* Fest Concluded — Registration Closed Notice */}
+        <div className="surface p-8 sm:p-12 text-center space-y-6 border-2 border-primary/30">
+          <div className="size-16 rounded-full bg-primary/15 text-primary grid place-items-center mx-auto">
+            <CheckCircle2 className="size-9" />
+          </div>
+          <div className="space-y-2">
+            <p className="section-label text-primary">Kaltarang 2026 Officially Concluded</p>
+            <h1 className="font-display text-4xl sm:text-5xl">
+              Registrations &amp; Gate Passes Are Now Closed
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-xl mx-auto leading-relaxed pt-2">
+              Thank you for being part of <strong>Kaltarang 2026</strong> at <strong>Rajiv Gandhi Institute of Petroleum Technology (RGIPT)</strong>. All external participants have been permanently checked out and campus gate entry passes are now closed.
+            </p>
+          </div>
+          <div className="pt-2 flex justify-center gap-3">
+            <Button asChild variant="outline">
+              <Link href="/">← Return to Portal Home</Link>
+            </Button>
+            <Button asChild className="bg-primary hover:bg-primary/90">
+              <Link href="/admin/login">Admin &amp; Final Reports Login</Link>
+            </Button>
+          </div>
+        </div>
+
+        {false && (submitted ? (
           <div className="surface p-8 sm:p-12 text-center space-y-6 animate-in fade-in duration-300">
             <div className="size-16 rounded-full bg-success/15 text-success grid place-items-center mx-auto">
               <CheckCircle2 className="size-9" />
@@ -548,7 +572,7 @@ export default function PublicRegistrationPage() {
               </section>
             </form>
           </div>
-        )}
+        ))}
 
         {/* Sponsors Showcase at bottom of Registration Page */}
         <SponsorsShowcase />

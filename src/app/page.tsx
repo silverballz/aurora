@@ -52,7 +52,27 @@ export default function HomePage() {
       </header>
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col justify-center max-w-7xl mx-auto px-6 py-12 lg:py-16 w-full space-y-16">
+      <main className="flex-1 flex flex-col justify-center max-w-7xl mx-auto px-6 py-12 lg:py-16 w-full space-y-12">
+        {/* Official Fest Concluded & Permanent Check-Out Banner */}
+        <div className="p-6 rounded-2xl border-2 border-primary/40 bg-primary/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider">
+              <CheckCircle2 className="size-3.5" /> Kaltarang 2026 Officially Concluded · Portal Closed
+            </div>
+            <h2 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
+              All External Participants Have Been Permanently Checked Out (0 Inside Campus)
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-3xl">
+              Kaltarang 2026 at RGIPT has officially concluded. New participant registrations and Main Gate entry check-ins are now permanently closed. Admin and Technical Co-Heads can continue to access the Admin Console for final reports, Aadhaar/ID archives, and gate audit logs.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button asChild size="sm" className="bg-primary hover:bg-primary/90 text-xs">
+              <Link href="/admin/reports">Download Final Reports &amp; Logs</Link>
+            </Button>
+          </div>
+        </div>
+
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider mb-6">
             <Sparkles className="size-3.5" /> Official External Participant Access &amp; Identity System · RGIPT
